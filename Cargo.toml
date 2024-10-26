@@ -1,0 +1,10 @@
+[package]
+name = "rust-bin"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.5.20", features = ["derive"] }
+home = { version = "0.5.9" }
+serde = { version = "1.0.213", features = ["derive"] }
+xcfg-rs = { version = "0.3.0", features = ["full"] }
