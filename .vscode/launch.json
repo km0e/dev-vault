@@ -1,0 +1,68 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in library 'dev_vault'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--lib",
+          "--package=dev-vault"
+        ],
+        "filter": {
+          "name": "dev_vault",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'dv'",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=dv",
+          "--package=dv"
+        ],
+        "filter": {
+          "name": "dv",
+          "kind": "bin"
+        }
+      },
+      "args": [
+        "e",
+        "this",
+        "-n"
+      ],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in executable 'dv'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=dv",
+          "--package=dv"
+        ],
+        "filter": {
+          "name": "dv",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}
