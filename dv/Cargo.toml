@@ -1,0 +1,21 @@
+[package]
+name = "dv"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+xcfg-rs = { version = "0.3.3", features = ["full"] }
+dev-vault = { path = "../dev-vault"}
+clap = { version = "4.5.27", features = ["derive"] }
+tracing.workspace=true
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+rusqlite = "0.33.0"
+serde = { version = "1.0.217", features = ["derive"] }
+async-trait.workspace = true
+home = { version = "0.5.11" }
+scopeguard = { version = "1.2.0" }
+tokio.workspace = true
+tokio-fd = "0.3.0"
+termion = "4.0.3"
+nix = {version="0.29.0",features = ["term"]}
+snafu = "0.8.5"
