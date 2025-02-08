@@ -7,58 +7,41 @@ use process::PtyProcess;
 use rustix::path::Arg;
 use snafu::ResultExt;
 use systemd::Systemd;
+use tracing::trace;
 
 mod file;
 mod process;
 mod systemd;
 
 #[derive(Debug)]
-pub struct HostConfig {
+pub struct LocalConfig {
     pub uid: String,
     pub hid: String,
     pub mount: PathBuf,
 }
 
 #[async_trait]
-impl UserCast for HostConfig {
+impl UserCast for LocalConfig {
     async fn cast(self) -> crate::Result<User> {
         let is_system = rustix::process::getuid().is_root();
-        let dev = Host::new(is_system).await?;
-        Ok(User::new(
+        let dev = This::new(is_system).await?;
+        User::new(
             self.uid.clone(),
             self.hid,
             is_system,
             Some(self.mount.clone()),
             Environment::detect(),
             dev,
-        ))
+        )
+        .await
     }
 }
 
-impl HostConfig {
-    pub async fn into_host(
-        self,
-        hid: impl Into<String>,
-        is_system: bool,
-    ) -> crate::Result<(String, User)> {
-        let dev = Host::new(is_system).await?;
-        let dev = User::new(
-            self.uid.clone(),
-            hid.into(),
-            is_system,
-            Some(self.mount.clone()),
-            Environment::detect(),
-            dev,
-        );
-        Ok((self.uid, dev))
-    }
-}
-
-pub struct Host {
+pub struct This {
     systemd: Systemd, // TODO: add more
 }
 
-impl Host {
+impl This {
     pub async fn new(is_system: bool) -> crate::Result<Self> {
         let systemd = Systemd::new(is_system).await?;
         Ok(Self { systemd })
@@ -66,7 +49,7 @@ impl Host {
 }
 
 #[async_trait]
-impl UserImpl for Host {
+impl UserImpl for This {
     async fn check(&self, path: &str) -> CheckResult {
         Path::new(path).try_into()
     }
@@ -123,6 +106,10 @@ impl UserImpl for Host {
                         {
                             Path::new(src).exists()
                         }
+                        #[cfg(not(debug_assertions))]
+                        {
+                            true
+                        }
                     } =>
                 {
                     let parent = Path::new(dst).parent().unwrap();
@@ -145,8 +132,13 @@ impl UserImpl for Host {
         };
         Ok(())
     }
-    async fn exec(&self, command: Command<'_, '_>, shell: Option<&str>) -> ExecResult {
-        let cmd = PtyProcess::new(command, shell).await?;
+    async fn exec(&self, command: CommandStr<'_, '_>, shell: Option<&str>) -> ExecResult {
+        trace!("try to exec command");
+        let cmd = PtyProcess::new(command, shell)
+            .await
+            .with_context(|_| error::IoSnafu {
+                about: "create new pty",
+            })?;
         Ok(cmd.into())
     }
     async fn open(&self, path: &str, opt: OpenFlags) -> crate::Result<BoxedFile> {
@@ -158,4 +150,4 @@ impl UserImpl for Host {
     }
 }
 
-into_boxed_device!(Host);
+into_boxed_device!(This);

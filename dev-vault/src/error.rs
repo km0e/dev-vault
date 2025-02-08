@@ -23,7 +23,7 @@ pub enum Error {
     #[snafu(context(false), display("Parse: {source}"))]
     Parse { source: russh_config::Error },
     #[snafu(context(false), display("SSHKey: {source}"))]
-    SSHKey { source: russh_keys::Error },
+    SSHKey { source: russh::keys::Error },
     #[snafu(context(false), display("SSH: {source}"))]
     SSH { source: russh::Error },
     #[snafu(display("SFTP: {source}"))]

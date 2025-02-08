@@ -44,8 +44,6 @@ pub struct TaskGroupConfig {
     pub copy: Vec<CopyTaskConfig>,
     #[serde(default)]
     pub app: Vec<AppTaskConfig>,
-    // #[serde(default)]
-    // pub shell: Vec<ShellTaskConfig>,
     #[serde(default)]
     pub exec: Vec<ExecTaskConfig>,
 }

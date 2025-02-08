@@ -1,10 +1,15 @@
 [workspace]
-members = [
-    "dev-vault", "dv",
-]
+members = ["dev-vault", "dv"]
 resolver = "2"
 
 [workspace.dependencies]
-tokio = { version = "1.43.0", features = ["fs","io-std","sync", "rt-multi-thread", "macros"] }
+tokio = { version = "1.43.0", features = [
+  "fs",
+  "io-std",
+  "sync",
+  "rt-multi-thread",
+  "macros",
+] }
 tracing = { version = "0.1.41" }
-async-trait = "0.1.85"
+async-trait = "0.1.86"
+snafu = "0.8.5"

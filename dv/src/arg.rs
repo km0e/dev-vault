@@ -14,6 +14,8 @@ pub struct Cli {
     pub command: Which,
     #[arg(short, long, default_value_os_t = default_config())]
     pub directory: PathBuf,
+    #[arg(short, long)]
+    pub config: Option<PathBuf>,
 }
 
 #[derive(Subcommand, Debug)]

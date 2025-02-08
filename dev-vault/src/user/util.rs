@@ -1,5 +1,5 @@
 mod am;
-pub use am::BoxedAm;
+pub use am::{new_am, BoxedAm};
 mod command;
 mod dev {
     pub use super::super::core::*;

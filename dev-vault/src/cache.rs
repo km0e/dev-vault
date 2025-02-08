@@ -2,6 +2,6 @@ use async_trait::async_trait;
 
 #[async_trait]
 pub trait Cache {
-    async fn check_update(&self, uid: &str, path: &str, modified: u64) -> crate::Result<bool>;
-    async fn set(&self, uid: &str, path: &str, modified: u64) -> crate::Result<()>;
+    async fn get(&self, hid: &str, path: &str) -> crate::Result<Option<(u64, u64)>>;
+    async fn set(&self, hid: &str, path: &str, version: u64, modified: u64) -> crate::Result<()>;
 }

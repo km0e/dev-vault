@@ -60,10 +60,10 @@ impl<I: ContextImpl> GroupParts<I> {
 }
 
 impl<I: ContextImpl> GroupParts<I> {
-    pub fn cast<'a, 'b: 'a, 'c: 'a, 'd>(
+    pub fn cast<'a, 'b: 'a, 'c: 'a>(
         &'a self,
-        groups: &'c HashMap<String, GroupParts<I>>,
-        global_tasks: &'b HashMap<String, TaskParts<I>>,
+        groups: &'b HashMap<String, GroupParts<I>>,
+        global_tasks: &'c HashMap<String, TaskParts<I>>,
         filter: &mut UserFilter,
     ) -> dev_vault::Result<Plan<'a, I>> {
         info!("cast group {}", self.dummy.id);

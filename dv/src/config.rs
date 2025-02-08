@@ -9,17 +9,17 @@ use serde::{Deserialize, Serialize};
 
 use task::*;
 use tracing::info;
-use user::{HostDeviceConfig, SSHDeviceConfig};
+use user::{LocalDeviceConfig, SSHDeviceConfig};
 use xcfg::XCfg;
 
 pub fn default_mount() -> PathBuf {
     "~/.config/dv".into()
 }
 pub fn default_hid() -> String {
-    "host".into()
+    "local".into()
 }
 pub fn default_uid() -> String {
-    "host".into()
+    "this".into()
 }
 
 mod group;
@@ -35,9 +35,9 @@ use crate::adapter::{GroupParts, TaskParts};
 
 #[derive(Default, Debug, Serialize, Deserialize, XCfg)]
 struct FullConfig {
-    pub id: String,
+    pub id: Option<String>,
     pub ssh: Vec<SSHDeviceConfig>,
-    pub host: Option<HostDeviceConfig>,
+    pub local: Option<LocalDeviceConfig>,
     #[serde(default)]
     pub group: Vec<TaskGroupConfig>,
     #[serde(default)]
@@ -46,15 +46,14 @@ struct FullConfig {
     pub copy: Vec<CopyTaskConfig>,
     #[serde(default)]
     pub app: Vec<AppTaskConfig>,
-    // #[serde(default)]
-    // pub shell: Vec<ShellTaskConfig>,
     #[serde(default)]
     pub exec: Vec<ExecTaskConfig>,
 }
 
 pub struct Config<I: ContextImpl> {
+    pub id: Option<String>,
     ssh: Vec<SSHDeviceConfig>,
-    host: Option<HostDeviceConfig>,
+    local: Option<LocalDeviceConfig>,
     group: HashMap<String, GroupParts<I>>,
     tasks: HashMap<String, TaskParts<I>>,
 }
@@ -89,13 +88,14 @@ impl<I: ContextImpl> Config<I> {
             })
             .collect();
         Ok(Self {
-            host: fc.host,
+            id: fc.id,
+            local: fc.local,
             ssh: fc.ssh,
             group,
             tasks,
         })
     }
-    pub async fn cast(&self, host_dir: PathBuf, id: Option<&str>) -> (UserManager, Vec<Plan<I>>) {
+    pub async fn cast(&self, this_dir: PathBuf, id: Option<&str>) -> (UserManager, Vec<Plan<I>>) {
         match id {
             Some(id) => info!("cast group {}", id),
             None => info!("cast all group"),
@@ -121,8 +121,8 @@ impl<I: ContextImpl> Config<I> {
                 .collect(),
         };
         let mut dm = dev_vault::UserManager::default();
-        if let Some(mut dev) = self.host.clone() {
-            dev.user.mount = host_dir;
+        if let Some(mut dev) = self.local.clone() {
+            dev.user.mount = this_dir;
             dm.extend(Some(dev.cast(&filter).await));
         }
         let mut ssh_dev = Vec::with_capacity(self.ssh.len());

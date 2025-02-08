@@ -13,24 +13,14 @@ mod process;
 
 struct Client {}
 
-#[async_trait]
 impl client::Handler for Client {
     type Error = russh::Error;
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &russh_keys::PublicKey,
+        _: &russh::keys::ssh_key::PublicKey,
     ) -> Result<bool, Self::Error> {
         Ok(true)
-    }
-
-    async fn data(
-        &mut self,
-        _channel: russh::ChannelId,
-        _data: &[u8],
-        _session: &mut client::Session,
-    ) -> Result<(), Self::Error> {
-        Ok(())
     }
 }
 
@@ -145,7 +135,7 @@ impl UserImpl for SSHSession {
         }
         Ok(())
     }
-    async fn exec(&self, command: Command<'_, '_>, shell: Option<&str>) -> ExecResult {
+    async fn exec(&self, command: CommandStr<'_, '_>, shell: Option<&str>) -> ExecResult {
         let channel = self.session.channel_open_session().await?;
         channel
             .request_pty(

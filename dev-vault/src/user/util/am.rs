@@ -11,7 +11,7 @@ mod mock;
 
 #[async_trait]
 pub trait Am {
-    async fn install(&self, dev: &User, package: &[String]) -> crate::Result<BoxedPtyProcess>;
+    async fn install(&self, u: &User, package: &[String]) -> crate::Result<BoxedPtyProcess>;
 }
 
 pub type BoxedAm = Box<dyn Am + Send + Sync>;
@@ -31,11 +31,12 @@ macro_rules! into_boxed_am {
 }
 pub(crate) use into_boxed_am;
 
-impl From<&Environment> for BoxedAm {
-    fn from(value: &Environment) -> Self {
-        let Some(os) = value.os.as_ref() else {
-            return MockAm {}.into();
-        };
-        linux::try_match(os).unwrap_or_else(|| MockAm {}.into())
-    }
+pub async fn new_am(u: &BoxedUser, e: &Environment) -> crate::Result<BoxedAm> {
+    let Some(os) = e.os.as_ref() else {
+        return Ok(MockAm {}.into());
+    };
+    #[cfg(target_os = "linux")]
+    Ok(linux::try_match(u, os)
+        .await?
+        .unwrap_or_else(|| MockAm {}.into()))
 }

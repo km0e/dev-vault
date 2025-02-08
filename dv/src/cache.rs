@@ -17,6 +17,7 @@ impl SqliteCache {
             "CREATE TABLE IF NOT EXISTS cache (
                 device TEXT NOT NULL,
                 path TEXT NOT NULL,
+                version INTEGER NOT NULL,
                 modified INTEGER NOT NULL,
                 PRIMARY KEY (device, path)
             )",
@@ -31,33 +32,34 @@ impl SqliteCache {
 
 #[async_trait]
 impl Cache for SqliteCache {
-    async fn check_update(
-        &self,
-        device: &str,
-        path: &str,
-        modified: u64,
-    ) -> dev_vault::Result<bool> {
+    async fn get(&self, hid: &str, path: &str) -> dev_vault::Result<Option<(u64, u64)>> {
         let row = self.conn.lock().await.query_row(
-            "SELECT modified FROM cache WHERE device = ? AND path = ?",
-            [device, path],
-            |row| row.get::<_, u64>(0),
+            "SELECT version, modified FROM cache WHERE device = ? AND path = ?",
+            [hid, path],
+            |row| Ok((row.get::<_, u64>(0)?, row.get::<_, u64>(1)?)),
         );
         match row {
-            Ok(m) => Ok(m != modified),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(true),
+            Ok(fs) => Ok(Some(fs)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(dev_vault::Error::Whatever {
                 message: e.to_string(),
             }),
         }
     }
-    async fn set(&self, device: &str, path: &str, modified: u64) -> dev_vault::Result<()> {
-        info!("cache set: {} {} {}", device, path, modified);
+    async fn set(
+        &self,
+        hid: &str,
+        path: &str,
+        version: u64,
+        modified: u64,
+    ) -> dev_vault::Result<()> {
+        info!("cache set: {} {} {} {}", hid, path, version, modified);
         self.conn
             .lock()
             .await
             .execute(
-                "INSERT OR REPLACE INTO cache (device, path, modified) VALUES (?, ?, ?)",
-                [device, path, &modified.to_string()],
+                "INSERT OR REPLACE INTO cache (device, path, version, modified) VALUES (?, ?, ?, ?)",
+                [hid, path, &version.to_string(), &modified.to_string()],
             )
             .map(|_| ())
             .map_err(|e| dev_vault::Error::Whatever {

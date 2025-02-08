@@ -9,6 +9,7 @@ use snafu::{whatever, ResultExt};
 use tracing::info;
 
 use crate::{env::Environment, error, Interactor, PrintState};
+
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Index {
     pub this: usize,
@@ -46,24 +47,25 @@ impl PrintState for User {
 }
 
 impl User {
-    pub fn new(
+    pub async fn new(
         id: String,
         hid: String,
         is_system: bool,
         mount: Option<PathBuf>,
         env: Environment,
         dev: impl Into<BoxedUser>,
-    ) -> Self {
-        let am = (&env).into();
-        Self {
+    ) -> crate::Result<Self> {
+        let inner = dev.into();
+        let am = super::util::new_am(&inner, &env).await?;
+        Ok(Self {
             uid: id,
             hid,
             is_system,
             mount,
             env,
-            inner: dev.into(),
+            inner,
             am,
-        }
+        })
     }
     fn normalize<'a>(&self, path: &'a Path) -> crate::Result<Cow<'a, Path>> {
         let path = path
@@ -113,7 +115,7 @@ impl User {
     pub async fn app(&self, package: &[String]) -> ExecResult {
         self.am.install(self, package).await
     }
-    pub async fn exec(&self, command: Command<'_, '_>, shell: Option<&str>) -> ExecResult {
+    pub async fn exec(&self, command: CommandStr<'_, '_>, shell: Option<&str>) -> ExecResult {
         self.inner.exec(command, shell).await
     }
     pub async fn open(&self, path: &str, opt: OpenFlags) -> crate::Result<BoxedFile> {

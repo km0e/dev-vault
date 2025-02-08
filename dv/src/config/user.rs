@@ -49,35 +49,21 @@ impl UserComplete for SSHDeviceConfig {
         let mut vec = Vec::new();
         for user in self.users {
             if filter.contains(&user.uid) {
-                vec.push(
-                    user::SSHUserConfig {
-                        uid: user.uid,
-                        hid: self.hid.clone(),
-                        is_system: true,
-                        os: self.os.clone(),
-                        host: user.host,
-                        passwd: user.passwd,
-                    }
-                    .cast()
-                    .await
-                    .expect("cast user"),
-                );
+                let mut user_cfg = user::SSHUserConfig::new(user.uid, self.hid.clone(), user.host);
+                user_cfg.os = self.os.clone();
+                user_cfg.passwd = user.passwd;
+                vec.push(user_cfg.cast().await.expect("cast user"));
             }
         }
         let system = match self.system {
-            Some(system) if filter.contains(&system.uid) => Some(
-                user::SSHUserConfig {
-                    uid: system.uid,
-                    hid: self.hid.clone(),
-                    is_system: true,
-                    os: self.os.clone(),
-                    host: system.host,
-                    passwd: system.passwd,
-                }
-                .cast()
-                .await
-                .expect("cast system"),
-            ),
+            Some(system) if filter.contains(&system.uid) => {
+                let mut system_cfg =
+                    user::SSHUserConfig::new(system.uid, self.hid.clone(), system.host);
+                system_cfg.is_system = true;
+                system_cfg.os = self.os.clone();
+                system_cfg.passwd = system.passwd;
+                Some(system_cfg.cast().await.expect("cast system"))
+            }
             _ => None,
         };
 
@@ -105,19 +91,19 @@ impl SSHDeviceConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HostDeviceConfig {
+pub struct LocalDeviceConfig {
     #[serde(default = "default_hid")]
     pub hid: String,
-    pub user: HostConfig,
-    system: Option<SSHUserConfig>,
+    pub user: LocalConfig,
+    pub system: Option<SSHUserConfig>,
 }
 
 #[async_trait]
-impl UserComplete for HostDeviceConfig {
+impl UserComplete for LocalDeviceConfig {
     async fn cast(self, filter: &UserFilter) -> (Option<User>, Vec<User>) {
         let env = Environment::detect();
         let user = if filter.contains(&self.user.uid) {
-            vec![user::HostConfig {
+            vec![user::LocalConfig {
                 uid: self.user.uid,
                 hid: self.hid.clone(),
                 mount: self.user.mount,
@@ -129,19 +115,14 @@ impl UserComplete for HostDeviceConfig {
             vec![]
         };
         let system = match self.system {
-            Some(system) if filter.contains(&system.uid) => Some(
-                user::SSHUserConfig {
-                    uid: system.uid,
-                    hid: self.hid.clone(),
-                    is_system: true,
-                    os: env.os,
-                    host: system.host,
-                    passwd: system.passwd,
-                }
-                .cast()
-                .await
-                .expect("cast system"),
-            ),
+            Some(system) if filter.contains(&system.uid) => {
+                let mut system_cfg =
+                    user::SSHUserConfig::new(system.uid, self.hid.clone(), system.host);
+                system_cfg.is_system = true;
+                system_cfg.passwd = system.passwd;
+                system_cfg.os = env.os;
+                Some(system_cfg.cast().await.expect("cast system"))
+            }
             _ => None,
         };
 
@@ -149,17 +130,17 @@ impl UserComplete for HostDeviceConfig {
     }
 }
 
-impl Default for HostDeviceConfig {
+impl Default for LocalDeviceConfig {
     fn default() -> Self {
         Self {
             hid: default_hid(),
-            user: HostConfig::default(),
+            user: LocalConfig::default(),
             system: None,
         }
     }
 }
 
-impl HostDeviceConfig {
+impl LocalDeviceConfig {
     pub fn system(mut self, system: SSHUserConfig) -> Self {
         self.system = Some(system);
         self
@@ -167,14 +148,14 @@ impl HostDeviceConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HostConfig {
+pub struct LocalConfig {
     #[serde(default = "default_uid")]
     pub uid: String,
     #[serde(default = "default_mount")]
     pub mount: PathBuf,
 }
 
-impl Default for HostConfig {
+impl Default for LocalConfig {
     fn default() -> Self {
         Self {
             uid: default_uid(),

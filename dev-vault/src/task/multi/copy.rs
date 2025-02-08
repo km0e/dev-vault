@@ -5,7 +5,7 @@ use crate::error;
 use super::dev::{self, *};
 
 use async_trait::async_trait;
-use snafu::ResultExt;
+use snafu::{whatever, ResultExt};
 use tracing::debug;
 
 mod check;
@@ -65,7 +65,7 @@ impl<I: ContextImpl> Task<I> for CopyTask {
                     user: dst_user,
                     path: dst_path,
                 },
-            src_ts,
+            version,
         } in copy_info
         {
             interactor
@@ -74,23 +74,32 @@ impl<I: ContextImpl> Task<I> for CopyTask {
                     &src_user.uid, &src_path, &dst_user.uid, &dst_path,
                 ))
                 .await;
-            if src_user.hid != dst_user.hid {
-                let mut src = src_user.open(&src_path, OpenFlags::READ).await?;
-                let mut dst = dst_user
-                    .open(&dst_path, OpenFlags::WRITE | OpenFlags::CREATE)
-                    .await?;
-                tokio::io::copy(&mut src, &mut dst)
-                    .await
-                    .with_context(|_| error::IoSnafu { about: "copy file" })?;
-            } else {
-                let main = if src_user.is_system {
-                    src_user
+            let m = {
+                if src_user.hid != dst_user.hid {
+                    let mut src = src_user.open(&src_path, OpenFlags::READ).await?;
+                    let mut dst = dst_user
+                        .open(&dst_path, OpenFlags::WRITE | OpenFlags::CREATE)
+                        .await?;
+                    tokio::io::copy(&mut src, &mut dst)
+                        .await
+                        .with_context(|_| error::IoSnafu { about: "copy file" })?;
+                    dst.ts().await?
                 } else {
-                    dst_user
-                };
-                main.copy(&src_path, &dst_path).await?;
-            }
-            cache.set(&dst_user.hid, &dst_path, src_ts).await?;
+                    let main = if src_user.is_system {
+                        src_user
+                    } else {
+                        dst_user
+                    };
+                    main.copy(&src_path, &dst_path).await?;
+                    match dst_user.check_file(&dst_path).await? {
+                        FileStat::Meta(meta) => meta.ts,
+                        FileStat::NotFound => {
+                            whatever!("copy {} -> {} failed", &src_path, &dst_path)
+                        }
+                    }
+                }
+            };
+            cache.set(&dst_user.hid, &dst_path, version, m).await?;
         }
         Ok(TaskStatus::Success)
     }

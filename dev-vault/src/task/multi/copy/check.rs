@@ -5,7 +5,7 @@ use tracing::{debug, info, trace};
 pub struct CopyItem<'a, 'b> {
     pub src: PathDetail<'a, 'b>,
     pub dst: PathDetail<'a, 'b>,
-    pub src_ts: u64,
+    pub version: u64,
 }
 
 pub struct PathDetail<'a, 'b> {
@@ -29,14 +29,45 @@ async fn check_file<'a, I: ContextImpl>(
 ) -> crate::Result<bool> {
     let cache = context.get_cache();
     let interactor = context.get_interactor();
-    if cache.check_update(&dst.user.hid, &dst.path, src_ts).await? {
-        info!("[Task] {} needs to be updated to {}", dst.path, src_ts);
-    } else {
-        interactor
-            .log(&format!("[Skip] copy to {}:{}", &dst.user.uid, &dst.path))
-            .await;
-        return Ok(false);
+    if let Some((v, m)) = cache.get(&dst.user.hid, &dst.path).await? {
+        if v == src_ts
+            && match dst.user.check_file(&dst.path).await? {
+                FileStat::NotFound => {
+                    debug!("{} not found", dst.path);
+                    false
+                }
+                FileStat::Meta(meta) => meta.ts == m,
+            }
+        {
+            interactor
+                .log(&format!("[Skip] copy to {}:{}", &dst.user.uid, &dst.path))
+                .await;
+            return Ok(false);
+        }
     }
+
+    info!("[Task] {} needs to be updated to {}", dst.path, src_ts);
+    // if !cache.check_update(&dst.user.hid, &dst.path).await?
+    //     && {
+    //         #[cfg(debug_assertions)]
+    //         debug!("{} should be updated", dst.path);
+    //         true
+    //     }
+    //     && match dst.user.check_file(&dst.path).await? {
+    //         FileStat::NotFound => {
+    //             debug!("{} not found", dst.path);
+    //             false
+    //         }
+    //         FileStat::Meta(meta) => meta.ts == src_ts,
+    //     }
+    // {
+    //     interactor
+    //         .log(&format!("[Skip] copy to {}:{}", &dst.user.uid, &dst.path))
+    //         .await;
+    //     return Ok(false);
+    // } else {
+    //     info!("[Task] {} needs to be updated to {}", dst.path, src_ts);
+    // }
     trace!("check over");
     Ok(true)
 }
@@ -52,7 +83,7 @@ async fn check_copy_file<'a, 'b, I: ContextImpl>(
         update.then(|| CopyItem {
             src: PathDetail::new(src_user, metadata.path),
             dst,
-            src_ts: metadata.ts,
+            version: metadata.ts,
         })
     })
 }
@@ -70,7 +101,7 @@ async fn check_copy_dir<'a, 'b, I: ContextImpl>(
             copy_info.push(CopyItem {
                 src: PathDetail::new(src_user, format!("{}/{}", dir.path, path)),
                 dst,
-                src_ts: ts,
+                version: ts,
             });
         }
     }

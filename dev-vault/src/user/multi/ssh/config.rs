@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use russh::client::{self, Handle};
+use russh::client::{self, AuthResult, Handle};
 use snafu::{whatever, ResultExt};
 use tracing::warn;
 
@@ -12,12 +12,24 @@ use super::{dev::*, Client, SSHSession};
 pub struct SSHUserConfig {
     pub uid: String,
     pub hid: String,
+    pub host: String,
     pub is_system: bool,
     pub os: Option<String>,
-    pub host: String,
     pub passwd: Option<String>,
 }
 
+impl SSHUserConfig {
+    pub fn new(uid: impl Into<String>, hid: impl Into<String>, host: impl Into<String>) -> Self {
+        Self {
+            uid: uid.into(),
+            hid: hid.into(),
+            host: host.into(),
+            is_system: false,
+            os: None,
+            passwd: None,
+        }
+    }
+}
 #[async_trait::async_trait]
 impl UserCast for SSHUserConfig {
     async fn cast(self) -> crate::Result<User> {
@@ -42,45 +54,7 @@ impl UserCast for SSHUserConfig {
             command_util,
         };
 
-        let dev = User::new(id.clone(), self.hid, self.is_system, None, env, sys);
-        Ok(dev)
-    }
-}
-
-async fn by_publickey(
-    session: &mut Handle<Client>,
-    identity_file: Option<String>,
-    user: impl Into<String>,
-) -> crate::Result<bool> {
-    if let Some(path) = identity_file {
-        let kp = russh_keys::load_secret_key(&path, None)?;
-        let auth_res = session
-            .authenticate_publickey(
-                user,
-                russh_keys::key::PrivateKeyWithHashAlg::new(Arc::new(kp), None)?,
-            )
-            .await?;
-        if !auth_res {
-            warn!("authenticate_publickey with {} failed", path);
-        }
-        Ok(auth_res)
-    } else {
-        Ok(false)
-    }
-}
-async fn by_password(
-    session: &mut Handle<Client>,
-    passwd: Option<String>,
-    user: impl Into<String>,
-) -> crate::Result<bool> {
-    if let Some(passwd) = passwd {
-        let auth_res = session.authenticate_password(user, passwd).await?;
-        if !auth_res {
-            warn!("authenticate_password failed");
-        }
-        Ok(auth_res)
-    } else {
-        Ok(false)
+        User::new(id.clone(), self.hid, self.is_system, None, env, sys).await
     }
 }
 
@@ -92,17 +66,51 @@ async fn connect(host: String, passwd: Option<String>) -> crate::Result<(Handle<
 
     let mut session =
         client::connect(config, (host_cfg.host_name.clone(), host_cfg.port), sh).await?;
-    if !by_publickey(&mut session, host_cfg.identity_file, &host_cfg.user).await?
-        && !by_password(&mut session, passwd, &host_cfg.user).await?
-    {
-        whatever!(
-            "ssh connect {} {} {} failed",
-            host,
-            host_cfg.host_name,
-            host_cfg.user
-        );
+
+    let mut res = session.authenticate_none(&host_cfg.user).await?;
+    let AuthResult::Failure {
+        mut remaining_methods,
+    } = res
+    else {
+        return Ok((session, host_cfg.user));
+    };
+    warn!("authenticate_none failed");
+    use russh::{keys, MethodKind};
+    if let (Some(path), true) = (
+        host_cfg.identity_file,
+        remaining_methods.contains(&MethodKind::PublicKey),
+    ) {
+        let kp = keys::load_secret_key(&path, None)?;
+        res = session
+            .authenticate_publickey(
+                &host_cfg.user,
+                keys::PrivateKeyWithHashAlg::new(Arc::new(kp), None),
+            )
+            .await?;
+        let AuthResult::Failure {
+            remaining_methods: s,
+        } = res
+        else {
+            return Ok((session, host_cfg.user));
+        };
+        warn!("authenticate_publickey with {} failed", path);
+        remaining_methods = s;
     }
-    Ok((session, host_cfg.user))
+    if let (Some(passwd), true) = (passwd, remaining_methods.contains(&MethodKind::Password)) {
+        res = session
+            .authenticate_password(&host_cfg.user, passwd)
+            .await?;
+        if res.success() {
+            return Ok((session, host_cfg.user));
+        }
+        warn!("authenticate_password failed");
+    }
+    whatever!(
+        "ssh connect {} {} {} failed",
+        host,
+        host_cfg.host_name,
+        host_cfg.user
+    );
 }
 
 async fn detect(h: &Handle<Client>, user: String) -> crate::Result<Environment> {

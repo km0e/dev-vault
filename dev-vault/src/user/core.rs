@@ -75,7 +75,7 @@ impl TryFrom<&Path> for FileStat {
 
 pub type CheckResult = crate::Result<FileStat>;
 
-pub enum Command<'a, 'b> {
+pub enum CommandStr<'a, 'b> {
     Whole(&'a str),
     Split {
         program: &'a str,
@@ -83,20 +83,38 @@ pub enum Command<'a, 'b> {
     },
 }
 
-impl<'a, 'b> From<&'b [&'a str]> for Command<'a, 'b> {
+impl<'a, 'b> From<&'b [&'a str]> for CommandStr<'a, 'b> {
     fn from(args: &'b [&'a str]) -> Self {
-        Command::Split {
+        CommandStr::Split {
             program: args[0],
             args: Box::new(args.iter().skip(1).copied()),
         }
     }
 }
-impl<'a> From<&'a str> for Command<'a, 'a> {
+
+impl<'a> From<&'a str> for CommandStr<'a, 'a> {
     fn from(program: &'a str) -> Self {
-        Command::Whole(program)
+        CommandStr::Whole(program)
     }
 }
-impl<'a, 'b> Command<'a, 'b> {
+
+impl From<CommandStr<'_, '_>> for String {
+    fn from(value: CommandStr<'_, '_>) -> Self {
+        match value {
+            CommandStr::Whole(cmd) => cmd.to_string(),
+            CommandStr::Split { program, args } => {
+                let mut result = program.to_string();
+                for arg in args {
+                    result.push(' ');
+                    result.push_str(arg);
+                }
+                result
+            }
+        }
+    }
+}
+
+impl<'a, 'b> CommandStr<'a, 'b> {
     pub fn new<I>(program: &'a str, args: I) -> Self
     where
         I: IntoIterator<Item = &'a str> + 'b,
@@ -123,11 +141,11 @@ impl<'a, 'b> Command<'a, 'b> {
     }
 }
 
-impl<'a, 'b> From<Command<'a, 'b>> for Vec<u8> {
-    fn from(command: Command<'a, 'b>) -> Self {
+impl<'a, 'b> From<CommandStr<'a, 'b>> for Vec<u8> {
+    fn from(command: CommandStr<'a, 'b>) -> Self {
         match command {
-            Command::Whole(cmd) => cmd.as_bytes().to_vec(),
-            Command::Split { program, args } => {
+            CommandStr::Whole(cmd) => cmd.as_bytes().to_vec(),
+            CommandStr::Split { program, args } => {
                 let mut result = program.as_bytes().to_vec();
                 for arg in args {
                     result.push(b' ');
@@ -147,7 +165,7 @@ pub trait UserImpl {
     async fn check_src(&self, path: &str) -> CheckSrcResult;
     async fn copy(&self, src: &str, dst: &str) -> crate::Result<()>;
     async fn auto(&self, name: &str, action: &str) -> crate::Result<()>;
-    async fn exec(&self, command: Command<'_, '_>, shell: Option<&str>) -> ExecResult;
+    async fn exec(&self, command: CommandStr<'_, '_>, shell: Option<&str>) -> ExecResult;
     async fn open(&self, path: &str, opt: OpenFlags) -> crate::Result<BoxedFile>;
 }
 

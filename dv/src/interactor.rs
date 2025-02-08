@@ -3,7 +3,7 @@ use std::io::Write;
 use async_trait::async_trait;
 use dev_vault::user::BoxedPtyProcess;
 use snafu::ResultExt;
-use termion::{raw::IntoRawMode, screen::IntoAlternateScreen, terminal_size};
+use termion::{raw::IntoRawMode, terminal_size};
 use tokio::sync::Mutex;
 
 #[derive(Debug)]
@@ -32,21 +32,12 @@ impl dev_vault::Interactor for TermInteractor {
         p.window_change(width as u32, height as u32, 0, 0).await?;
         #[allow(unused_variables)]
         let g = self.excl.lock().await;
-        let mut raw = std::io::stdout()
-            .into_raw_mode()
-            .and_then(|t| t.into_alternate_screen())
-            .with_context(|_| dev_vault::error::IoSnafu {
-                about: "into_raw_mode and into_alternate_screen",
-            })?;
-        write!(
-            raw,
-            "{}{}",
-            termion::clear::All,
-            termion::cursor::Goto(1, 1)
-        )
-        .with_context(|_| dev_vault::error::IoSnafu {
-            about: "write to raw",
-        })?;
+        let mut raw =
+            std::io::stdout()
+                .into_raw_mode()
+                .with_context(|_| dev_vault::error::IoSnafu {
+                    about: "into_raw_mode and into_alternate_screen",
+                })?;
         raw.flush()
             .with_context(|_| dev_vault::error::IoSnafu { about: "flush raw" })?;
         let stdin = tokio_fd::AsyncFd::try_from(0)

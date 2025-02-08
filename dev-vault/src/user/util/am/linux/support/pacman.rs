@@ -1,12 +1,15 @@
+use crate::user::util::am::into_boxed_am;
+
 use super::dev::*;
 
 #[derive(Default)]
 pub struct Pacman {}
 
-impl Pacman {
-    pub async fn install(&self, dev: &User, package: &[String]) -> crate::Result<BoxedPtyProcess> {
+#[async_trait::async_trait]
+impl Am for Pacman {
+    async fn install(&self, dev: &User, package: &[String]) -> crate::Result<BoxedPtyProcess> {
         dev.exec(
-            Command::new(
+            CommandStr::new(
                 "pacman",
                 ["-S", "--noconfirm", "--needed"]
                     .into_iter()
@@ -17,3 +20,4 @@ impl Pacman {
         .await
     }
 }
+into_boxed_am!(Pacman);
