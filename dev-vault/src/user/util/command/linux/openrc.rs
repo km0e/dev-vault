@@ -5,7 +5,7 @@ pub struct Openrc {}
 
 impl Openrc {
     pub async fn setup<U: UserImpl>(&self, user: &U, name: &str) -> crate::Result<BoxedPtyProcess> {
-        user.exec(["rc-update", "add", name, "default"].as_ref().into(), None)
+        user.exec(["rc-update", "add", name, "default"].as_ref().into())
             .await
     }
     pub async fn reload<U: UserImpl>(
@@ -13,7 +13,7 @@ impl Openrc {
         user: &U,
         name: &str,
     ) -> crate::Result<BoxedPtyProcess> {
-        user.exec(["rc-service", name, "restart"].as_ref().into(), None)
+        user.exec(["rc-service", name, "restart"].as_ref().into())
             .await
     }
 }

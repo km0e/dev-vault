@@ -7,6 +7,7 @@ use dev_vault::{
     Environment,
 };
 use serde::{Deserialize, Serialize};
+use tracing::info;
 
 #[async_trait]
 pub trait UserComplete {
@@ -103,6 +104,7 @@ impl UserComplete for LocalDeviceConfig {
     async fn cast(self, filter: &UserFilter) -> (Option<User>, Vec<User>) {
         let env = Environment::detect();
         let user = if filter.contains(&self.user.uid) {
+            info!("cast user {}", self.user.uid);
             vec![user::LocalConfig {
                 uid: self.user.uid,
                 hid: self.hid.clone(),

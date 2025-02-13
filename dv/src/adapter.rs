@@ -70,12 +70,12 @@ impl<I: ContextImpl> GroupParts<I> {
         let mut cite_task_nodes = Vec::new();
         let mut nodes = Vec::with_capacity(self.cites.len());
         for cite in self.cites.iter() {
-            if let Some(tp) = global_tasks.get(&cite.id) {
+            if let Some(tp) = global_tasks.get(&cite.attr.id) {
                 let (mut task, state) = tp.to_nodes();
                 task.target <<= cite.target.cast();
-                info!("Add cite task {} [{}]", cite.id, task.target);
+                info!("Add cite task {} [{}]", cite.attr.id, task.target);
                 nodes.push((task, state))
-            } else if let Some(plan) = groups.get(&cite.id) {
+            } else if let Some(plan) = groups.get(&cite.attr.id) {
                 let plan = plan.cast(groups, global_tasks, filter)?;
                 cite_task_nodes.extend(plan.tasks.into_iter().map(|mut task| {
                     task.target <<= cite.target.cast();
@@ -84,7 +84,7 @@ impl<I: ContextImpl> GroupParts<I> {
                 }));
                 nodes.push((plan.final_, plan.start));
             } else {
-                panic!("plan {} cite {} not found", self.dummy.id, cite.id);
+                panic!("plan {} cite {} not found", self.dummy.id, cite.attr.id);
             }
         }
         let nodes = self
@@ -98,11 +98,11 @@ impl<I: ContextImpl> GroupParts<I> {
             .inspect(|(task, _)| {
                 task.target.filter(filter);
             });
-        let topo = self
-            .tasks
-            .iter()
-            .map(|tp| (&tp.id, &tp.next[..]))
-            .chain(self.cites.iter().map(|cite| (&cite.id, &cite.next[..])));
+        let topo = self.tasks.iter().map(|tp| (&tp.id, &tp.next[..])).chain(
+            self.cites
+                .iter()
+                .map(|cite| (&cite.attr.id, &cite.attr.next[..])),
+        );
         let mut plan = Plan::new(
             repeat_with(|| self.dummy.to_nodes()).take(2).chain(nodes),
             topo,

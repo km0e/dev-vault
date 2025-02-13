@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use snafu::ResultExt;
-use tokio::io::AsyncWriteExt;
 
 use crate::error;
 mod util;
@@ -75,46 +74,34 @@ impl TryFrom<&Path> for FileStat {
 
 pub type CheckResult = crate::Result<FileStat>;
 
-pub enum CommandStr<'a, 'b> {
+pub enum Script<'a, 'b> {
     Whole(&'a str),
     Split {
         program: &'a str,
         args: Box<dyn 'b + Iterator<Item = &'a str> + Send>,
     },
+    Script {
+        program: &'a str,
+        input: Box<dyn 'b + Iterator<Item = &'a str> + Send>,
+    },
 }
 
-impl<'a, 'b> From<&'b [&'a str]> for CommandStr<'a, 'b> {
+impl<'a, 'b> From<&'b [&'a str]> for Script<'a, 'b> {
     fn from(args: &'b [&'a str]) -> Self {
-        CommandStr::Split {
+        Script::Split {
             program: args[0],
             args: Box::new(args.iter().skip(1).copied()),
         }
     }
 }
 
-impl<'a> From<&'a str> for CommandStr<'a, 'a> {
+impl<'a> From<&'a str> for Script<'a, 'a> {
     fn from(program: &'a str) -> Self {
-        CommandStr::Whole(program)
+        Script::Whole(program)
     }
 }
 
-impl From<CommandStr<'_, '_>> for String {
-    fn from(value: CommandStr<'_, '_>) -> Self {
-        match value {
-            CommandStr::Whole(cmd) => cmd.to_string(),
-            CommandStr::Split { program, args } => {
-                let mut result = program.to_string();
-                for arg in args {
-                    result.push(' ');
-                    result.push_str(arg);
-                }
-                result
-            }
-        }
-    }
-}
-
-impl<'a, 'b> CommandStr<'a, 'b> {
+impl<'a, 'b> Script<'a, 'b> {
     pub fn new<I>(program: &'a str, args: I) -> Self
     where
         I: IntoIterator<Item = &'a str> + 'b,
@@ -125,31 +112,30 @@ impl<'a, 'b> CommandStr<'a, 'b> {
             args: Box::new(args.into_iter()),
         }
     }
-
-    pub async fn write_to<W: AsyncWriteExt + Unpin>(self, mut writer: W) -> std::io::Result<()> {
-        match self {
-            Self::Whole(cmd) => writer.write_all(cmd.as_bytes()).await?,
-            Self::Split { program, args } => {
-                writer.write_all(program.as_bytes()).await?;
-                for arg in args {
-                    writer.write_all(b" ").await?;
-                    writer.write_all(arg.as_bytes()).await?;
-                }
-            }
-        }
-        Ok(())
+}
+impl From<Script<'_, '_>> for Vec<u8> {
+    fn from(value: Script<'_, '_>) -> Self {
+        String::from(value).into_bytes()
     }
 }
 
-impl<'a, 'b> From<CommandStr<'a, 'b>> for Vec<u8> {
-    fn from(command: CommandStr<'a, 'b>) -> Self {
-        match command {
-            CommandStr::Whole(cmd) => cmd.as_bytes().to_vec(),
-            CommandStr::Split { program, args } => {
-                let mut result = program.as_bytes().to_vec();
+impl From<Script<'_, '_>> for String {
+    fn from(value: Script<'_, '_>) -> Self {
+        match value {
+            Script::Whole(cmd) => cmd.to_string(),
+            Script::Split { program, args } => {
+                let mut result = program.to_string();
                 for arg in args {
-                    result.push(b' ');
-                    result.extend_from_slice(arg.as_bytes());
+                    result.push(' ');
+                    result.push_str(arg);
+                }
+                result
+            }
+            Script::Script { program, input } => {
+                let mut result = program.to_string();
+                for arg in input {
+                    result.push(' ');
+                    result.push_str(arg);
                 }
                 result
             }
@@ -165,7 +151,7 @@ pub trait UserImpl {
     async fn check_src(&self, path: &str) -> CheckSrcResult;
     async fn copy(&self, src: &str, dst: &str) -> crate::Result<()>;
     async fn auto(&self, name: &str, action: &str) -> crate::Result<()>;
-    async fn exec(&self, command: CommandStr<'_, '_>, shell: Option<&str>) -> ExecResult;
+    async fn exec(&self, command: Script<'_, '_>) -> ExecResult;
     async fn open(&self, path: &str, opt: OpenFlags) -> crate::Result<BoxedFile>;
 }
 

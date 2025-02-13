@@ -7,17 +7,15 @@ pub struct Pacman {}
 
 #[async_trait::async_trait]
 impl Am for Pacman {
-    async fn install(&self, dev: &User, package: &[String]) -> crate::Result<BoxedPtyProcess> {
-        dev.exec(
-            CommandStr::new(
-                "pacman",
-                ["-S", "--noconfirm", "--needed"]
-                    .into_iter()
-                    .chain(package.iter().map(|p| p.as_str())),
-            ),
-            None,
-        )
-        .await
+    async fn install(&self, u: &User, package: &[String]) -> crate::Result<BoxedPtyProcess> {
+        use std::iter::once;
+        let args = format!("am=pacman; pkgs=\"{}\"; noconfirm=t;", package.join(" "));
+        let input = once(args.as_str()).chain(once(include_str!("pacman.sh")));
+        let cmd = Script::Script {
+            program: "sh",
+            input: Box::new(input),
+        };
+        u.exec(cmd).await
     }
 }
 into_boxed_am!(Pacman);

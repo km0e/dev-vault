@@ -36,7 +36,7 @@ impl<U: UserImpl + Send + Sync> CommandUtil<U> for Manjaro {
     }
     //file utils
     async fn copy(&self, dev: &U, src: &str, dst: &str) -> crate::Result<BoxedPtyProcess> {
-        dev.exec(["cp", src, dst].as_ref().into(), None).await
+        dev.exec(["cp", src, dst].as_ref().into()).await
     }
 }
 

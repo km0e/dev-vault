@@ -115,8 +115,8 @@ impl User {
     pub async fn app(&self, package: &[String]) -> ExecResult {
         self.am.install(self, package).await
     }
-    pub async fn exec(&self, command: CommandStr<'_, '_>, shell: Option<&str>) -> ExecResult {
-        self.inner.exec(command, shell).await
+    pub async fn exec(&self, command: Script<'_, '_>) -> ExecResult {
+        self.inner.exec(command).await
     }
     pub async fn open(&self, path: &str, opt: OpenFlags) -> crate::Result<BoxedFile> {
         self.inner

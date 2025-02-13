@@ -3,8 +3,8 @@ use crate::error;
 use async_trait::async_trait;
 use russh::client;
 use russh_sftp::{client::SftpSession, protocol::StatusCode};
-use rustix::path::Arg;
 use snafu::{whatever, ResultExt};
+use tokio::io::AsyncWriteExt;
 use tracing::{debug, info, warn};
 mod config;
 pub use config::SSHUserConfig;
@@ -135,7 +135,7 @@ impl UserImpl for SSHSession {
         }
         Ok(())
     }
-    async fn exec(&self, command: CommandStr<'_, '_>, shell: Option<&str>) -> ExecResult {
+    async fn exec(&self, command: Script<'_, '_>) -> ExecResult {
         let channel = self.session.channel_open_session().await?;
         channel
             .request_pty(
@@ -149,15 +149,51 @@ impl UserImpl for SSHSession {
             )
             .await?;
         // info!("exec {}", command);
-        if let Some(shell) = shell {
-            channel.exec(true, shell).await?;
-            command
-                .write_to(channel.make_writer())
-                .await
-                .with_context(|_| error::IoSnafu {
-                    about: "write command",
-                })?;
-            channel.data("\n".as_bytes()).await?;
+        if let Script::Script { program, input } = command {
+            let mut retry = 5;
+            let mut name = String::with_capacity(4 + 6);
+            loop {
+                //TODO:extract to a function?
+                name.push_str(".tmp");
+                for c in std::iter::repeat_with(fastrand::alphanumeric).take(6) {
+                    name.push(c);
+                }
+                use russh_sftp::protocol::OpenFlags;
+                match self
+                    .sftp
+                    .open_with_flags(
+                        &name,
+                        OpenFlags::CREATE | OpenFlags::WRITE | OpenFlags::EXCLUDE,
+                    )
+                    .await
+                {
+                    Ok(mut file) => {
+                        file.write_all(format!("trap '{{ rm -f -- {}}}' EXIT;", name).as_bytes())
+                            .await
+                            .with_context(|_| error::IoSnafu {
+                                about: "write trap",
+                            })?;
+                        for blk in input {
+                            file.write_all(blk.as_bytes()).await.with_context(|_| {
+                                error::IoSnafu {
+                                    about: "write script",
+                                }
+                            })?;
+                        }
+                        break;
+                    }
+                    _ if retry > 0 => {
+                        retry -= 1;
+                        name.clear();
+                    }
+                    Err(e) => {
+                        return Err(e).context(error::SFTPSnafu {
+                            about: format!("create temp file {}", name),
+                        })?;
+                    }
+                }
+            }
+            channel.exec(true, format!("{} {}", program, name)).await?;
         } else {
             channel.exec(true, command).await?;
         }
@@ -166,11 +202,7 @@ impl UserImpl for SSHSession {
     async fn open(&self, path: &str, opt: OpenFlags) -> crate::Result<BoxedFile> {
         let open_flags = opt.into();
         let file = loop {
-            match self
-                .sftp
-                .open_with_flags(path.to_string_lossy(), open_flags)
-                .await
-            {
+            match self.sftp.open_with_flags(path, open_flags).await {
                 Ok(file) => break Ok(file),
                 Err(russh_sftp::client::error::Error::Status(s))
                     if s.status_code == StatusCode::NoSuchFile =>

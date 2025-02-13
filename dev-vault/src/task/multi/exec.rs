@@ -34,7 +34,15 @@ impl<I: ContextImpl> Task<I> for ExecTask {
         let uid = target.get_dst_uid()?;
         let user = context.get_user(uid, false)?;
         let mut rp = user
-            .exec(self.command.as_str().into(), self.shell.as_deref())
+            .exec(
+                self.shell
+                    .as_deref()
+                    .map(|sh| Script::Script {
+                        program: sh,
+                        input: Box::new([self.command.as_str()].into_iter()),
+                    })
+                    .unwrap_or_else(|| Script::Whole(self.command.as_str())),
+            )
             .await?;
         let interactor = context.get_interactor();
         let ec = interactor.ask(&mut rp).await?;

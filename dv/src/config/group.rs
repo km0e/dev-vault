@@ -5,28 +5,22 @@ use crate::adapter::GroupParts;
 
 use super::task::*;
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Cite {
-    pub id: String,
+    pub attr: TaskAttr,
     #[serde(default)]
     pub target: Target,
-    #[serde(default)]
-    pub next: Vec<String>,
 }
 
 impl Cite {
-    pub fn new(id: impl Into<String>) -> Self {
+    pub fn new(attr: impl Into<TaskAttr>) -> Self {
         Self {
-            id: id.into(),
-            ..Default::default()
+            attr: attr.into(),
+            target: Default::default(),
         }
     }
     pub fn with_target(mut self, target: Target) -> Self {
         self.target = target;
-        self
-    }
-    pub fn with_next(mut self, next: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        self.next = next.into_iter().map(|s| s.into()).collect();
         self
     }
 }

@@ -44,7 +44,7 @@ pub fn example(fmt: xcfg::Format) -> String {
             .with_cites([
                 Cite::new("service setup"),
                 Cite::new("service reload"),
-                Cite::new("rsetup a").with_next(["service"]),
+                Cite::new(TaskAttr::new("rsetup a").with_next(["service"])),
             ])
             .with_auto([AutoTaskConfig::new("service", "a.service", "reload").with_user("this")])
             .with_app([AppTaskConfig::new("service install", ["service"]).with_user("this")])

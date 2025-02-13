@@ -29,7 +29,7 @@ impl<I: ContextImpl> Task<I> for AppTask {
         I: 'async_trait,
     {
         let uid = target.get_dst_uid()?;
-        let user = context.get_user(uid, true)?;
+        let user = context.get_user(uid, false)?;
         let mut rp = user.app(&self.pkgs).await?;
         let int = context.get_interactor();
         let ec = int.ask(&mut rp).await?;

@@ -5,7 +5,7 @@ use wrap::Index;
 
 #[macro_use]
 mod core;
-pub use core::{BoxedPtyProcess, CheckInfo, DirInfo, FileStat, Metadata, OpenFlags};
+pub use core::{BoxedPtyProcess, CheckInfo, DirInfo, FileStat, Metadata, OpenFlags, Script};
 mod wrap;
 pub use wrap::{User, UserCast, UserFilter};
 mod util;

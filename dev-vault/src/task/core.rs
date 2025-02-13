@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 use async_trait::async_trait;
 use snafu::OptionExt;
+use tracing::debug;
 
 use crate::op::ContextImpl;
 
@@ -65,9 +66,11 @@ impl Target {
     }
     pub fn filter(&self, filter: &mut crate::user::UserFilter) {
         if let Some(uid) = &self.dst_uid {
+            debug!("need user: {}", uid);
             filter.insert(uid.to_string());
         }
         if let Some(uid) = &self.src_uid {
+            debug!("need user: {}", uid);
             filter.insert(uid.to_string());
         }
     }

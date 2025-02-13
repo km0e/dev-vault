@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 xcfg-rs = { version = "0.3.3", features = ["full"] }
 dev-vault = { path = "../dev-vault" }
-clap = { version = "4.5.27", features = ["derive"] }
+clap = { version = "4.5.28", features = ["derive"] }
 tracing.workspace = true
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 rusqlite = "0.33.0"

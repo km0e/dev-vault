@@ -11,5 +11,5 @@ use super::core;
 mod dev {
     pub use super::core::*;
     pub use crate::op::{Context, ContextImpl};
-    pub use crate::user::{CheckInfo, DirInfo, FileStat, Metadata, OpenFlags, User};
+    pub use crate::user::{CheckInfo, DirInfo, FileStat, Metadata, OpenFlags, Script, User};
 }

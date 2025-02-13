@@ -8,16 +8,14 @@ pub struct Apt {}
 #[async_trait::async_trait]
 impl Am for Apt {
     async fn install(&self, u: &User, package: &[String]) -> crate::Result<BoxedPtyProcess> {
-        u.exec(
-            CommandStr::new(
-                "apt",
-                ["install", "-y"]
-                    .into_iter()
-                    .chain(package.iter().map(String::as_str)),
-            ),
-            None,
-        )
-        .await
+        use std::iter::once;
+        let args = format!("pkgs=\"{}\"; noconfirm=t;", package.join(" "));
+        let input = once(args.as_str()).chain(once(include_str!("apt.sh")));
+        let cmd = Script::Script {
+            program: "sh",
+            input: Box::new(input),
+        };
+        u.exec(cmd).await
     }
 }
 

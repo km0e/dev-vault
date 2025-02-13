@@ -132,9 +132,9 @@ impl UserImpl for This {
         };
         Ok(())
     }
-    async fn exec(&self, command: CommandStr<'_, '_>, shell: Option<&str>) -> ExecResult {
+    async fn exec(&self, command: Script<'_, '_>) -> ExecResult {
         trace!("try to exec command");
-        let cmd = PtyProcess::new(command, shell)
+        let cmd = PtyProcess::new(command)
             .await
             .with_context(|_| error::IoSnafu {
                 about: "create new pty",

@@ -1,4 +1,5 @@
 use std::{
+    io::Write,
     mem::ManuallyDrop,
     os::{
         fd::{AsRawFd, FromRawFd, OwnedFd},
@@ -17,16 +18,15 @@ use tracing::debug;
 
 use crate::error;
 
-use super::{BoxedPtyProcess, CommandStr, PtyProcessImpl};
+use super::{BoxedPtyProcess, PtyProcessImpl, Script};
 
 pub struct PtyProcess {
     pub inner: std::process::Child,
     pub stdio: OwnedFd,
-    input: String,
 }
 
 impl PtyProcess {
-    pub async fn new(command: CommandStr<'_, '_>, shell: Option<&str>) -> std::io::Result<Self> {
+    pub async fn new(command: Script<'_, '_>) -> std::io::Result<Self> {
         let pair = rustix_openpty::openpty(None, None)?;
 
         #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -35,33 +35,36 @@ impl PtyProcess {
             termios.input_modes.set(termios::InputModes::IUTF8, true);
             let _ = termios::tcsetattr(&pair.controller, termios::OptionalActions::Now, &termios);
         }
-
-        let (mut builder, input) = if let Some(shell) = shell {
-            let cmd = Command::new(shell);
-            (cmd, command.into())
-        } else {
-            (
-                match command {
-                    CommandStr::Whole(cmd) => {
-                        let mut iter = cmd.split_whitespace();
-                        let mut cmd = Command::new(iter.next().unwrap());
-                        cmd.args(iter);
-                        cmd
-                    }
-                    CommandStr::Split { program, args } => {
-                        let mut cmd = Command::new(program);
-                        cmd.args(args);
-                        cmd
-                    }
-                },
-                String::new(),
-            )
+        let mut builder = match command {
+            Script::Whole(cmd) => {
+                let mut iter = cmd.split_whitespace();
+                let mut cmd = Command::new(iter.next().unwrap());
+                cmd.args(iter);
+                cmd
+            }
+            Script::Split { program, args } => {
+                let mut cmd = Command::new(program);
+                cmd.args(args);
+                cmd
+            }
+            Script::Script { program, input } => {
+                let mut cmd = Command::new(program);
+                let mut temp = tempfile::NamedTempFile::new()?;
+                temp.write_all(
+                    format!("trap '{{ rm -f -- {}; }}' EXIT;", temp.path().display()).as_bytes(),
+                )?;
+                for line in input {
+                    temp.write_all(line.as_bytes())?;
+                }
+                cmd.arg(temp.into_temp_path().keep()?);
+                cmd
+            }
         };
         // Setup child stdin/stdout/stderr.
         builder.stdin(pair.user.try_clone()?);
         builder.stderr(pair.user.try_clone()?);
         builder.stdout(pair.user.try_clone()?);
-
+        let stdio = pair.controller.try_clone()?;
         unsafe {
             use std::os::unix::process::CommandExt;
             builder.pre_exec(move || {
@@ -70,6 +73,8 @@ impl PtyProcess {
                 process::setsid()?;
                 process::ioctl_tiocsctty(&pair.user)?;
 
+                rustix::io::close(pair.user.as_raw_fd());
+                rustix::io::close(pair.controller.as_raw_fd());
                 // libc::signal(libc::SIGCHLD, libc::SIG_DFL);
                 // libc::signal(libc::SIGHUP, libc::SIG_DFL);
                 // libc::signal(libc::SIGINT, libc::SIG_DFL);
@@ -84,10 +89,10 @@ impl PtyProcess {
         // set signal handler
 
         let child = builder.spawn()?;
+
         Ok(Self {
             inner: child,
-            stdio: pair.controller,
-            input,
+            stdio,
         })
     }
 }
@@ -125,17 +130,6 @@ impl PtyProcessImpl for PtyProcess {
     }
     async fn output(&mut self) -> crate::Result<Vec<u8>> {
         let mut stdio = File::from_std(self.stdio.try_clone().unwrap().into());
-        if !self.input.is_empty() {
-            stdio
-                .write_all(self.input.as_bytes())
-                .await
-                .context(error::IoSnafu {
-                    about: "process command write",
-                })?;
-            stdio.write_u8(b'\n').await.context(error::IoSnafu {
-                about: "process u8 write",
-            })?;
-        }
         let mut buf = Vec::with_capacity(1024);
         let res = stdio.read_to_end(&mut buf).await;
         if let Err(e) = res {
@@ -155,17 +149,6 @@ impl PtyProcessImpl for PtyProcess {
         mut writer: Box<dyn AsyncWrite + Unpin + Send>,
     ) -> crate::Result<i32> {
         let mut stdin = unsafe { File::from_raw_fd(self.stdio.as_raw_fd()) };
-        if !self.input.is_empty() {
-            stdin
-                .write_all(self.input.as_bytes())
-                .await
-                .context(error::IoSnafu {
-                    about: "process command write",
-                })?;
-            stdin.write_u8(b'\n').await.context(error::IoSnafu {
-                about: "process u8 write",
-            })?;
-        }
         let mut stdout = unsafe { File::from_raw_fd(self.stdio.as_raw_fd()) };
         async fn copy<LR, LW, RR, RW>(
             lr: &mut LR,
@@ -180,8 +163,8 @@ impl PtyProcessImpl for PtyProcess {
             RW: AsyncWrite + Unpin,
         {
             let mut reader_closed = false;
-            let mut buf = vec![0; 1024];
-            let mut buf2 = vec![0; 1024];
+            let mut buf = [0; 1024];
+            let mut buf2 = [0; 1024];
             loop {
                 tokio::select! {
                     r = lr.read(&mut buf), if !reader_closed => {
