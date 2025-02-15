@@ -1,14 +1,11 @@
-use std::{
-    borrow::Cow,
-    path::{Path, PathBuf},
-};
+use std::{borrow::Cow, path::Path};
 
 use async_trait::async_trait;
 use path_dedot::ParseDot;
 use snafu::{whatever, ResultExt};
 use tracing::info;
 
-use crate::{env::Environment, error, Interactor, PrintState};
+use crate::error;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Index {
@@ -23,46 +20,33 @@ pub trait UserCast {
     async fn cast(self) -> crate::Result<User>;
 }
 
-use super::{core::*, util::BoxedAm};
+use super::{core::*, params::Params, util::BoxedAm};
+#[derive(Debug)]
 pub struct User {
-    pub uid: String,
+    params: Params,
     pub hid: String,
     pub is_system: bool,
-    pub mount: Option<PathBuf>,
-    pub env: Environment,
     pub inner: BoxedUser,
     am: BoxedAm,
 }
 
-#[async_trait]
-impl PrintState for User {
-    async fn print(&self, interactor: &(dyn Interactor + Sync)) {
-        interactor
-            .log(&format!(
-                "[User] id: {:<10}, hid: {:<10}, {}",
-                self.uid, self.hid, self.env
-            ))
-            .await;
-    }
-}
-
 impl User {
     pub async fn new(
-        id: String,
-        hid: String,
+        hid: impl Into<String>,
+        params: Params,
         is_system: bool,
-        mount: Option<PathBuf>,
-        env: Environment,
         dev: impl Into<BoxedUser>,
     ) -> crate::Result<Self> {
+        info!(
+            "new user:{} os:{} session:{:?} home:{:?} mount:{:?}",
+            params.user, params.os, params.session, params.home, params.mount
+        );
         let inner = dev.into();
-        let am = super::util::new_am(&inner, &env).await?;
+        let am = super::util::new_am(&inner, &params.os).await?;
         Ok(Self {
-            uid: id,
-            hid,
+            hid: hid.into(),
+            params,
             is_system,
-            mount,
-            env,
             inner,
             am,
         })
@@ -76,8 +60,8 @@ impl User {
         } else {
             let path = match (
                 path.strip_prefix("~"),
-                self.env.home.as_ref(),
-                self.mount.as_ref(),
+                self.params.home.as_ref(),
+                self.params.mount.as_ref(),
             ) {
                 (Ok(path), Some(home), _) => home.join(path),
                 (Ok(_), None, _) => whatever!("we need home"),
@@ -90,7 +74,6 @@ impl User {
         Ok(path)
     }
     pub async fn check_file(&self, path: &str) -> crate::Result<FileStat> {
-        info!("[{}] check {}", self.uid, path);
         self.inner
             .check(&self.normalize(Path::new(path))?.to_string_lossy())
             .await
@@ -100,8 +83,12 @@ impl User {
             .check_src(&self.normalize(Path::new(path))?.to_string_lossy())
             .await
     }
+    pub async fn glob_with_meta(&self, path: &str) -> crate::Result<Vec<Metadata>> {
+        self.inner
+            .glob_with_meta(&self.normalize(Path::new(path))?.to_string_lossy())
+            .await
+    }
     pub async fn copy(&self, src: &str, dst: &str) -> crate::Result<()> {
-        info!("[{}] copy {} -> {}", self.uid, src, dst);
         self.inner
             .copy(
                 &self.normalize(Path::new(src))?.to_string_lossy(),
@@ -112,8 +99,8 @@ impl User {
     pub async fn auto(&self, name: &str, action: &str) -> crate::Result<()> {
         self.inner.auto(name, action).await
     }
-    pub async fn app(&self, package: &[String]) -> ExecResult {
-        self.am.install(self, package).await
+    pub async fn app(&self, packages: &str) -> ExecResult {
+        self.am.install(self, packages).await
     }
     pub async fn exec(&self, command: Script<'_, '_>) -> ExecResult {
         self.inner.exec(command).await

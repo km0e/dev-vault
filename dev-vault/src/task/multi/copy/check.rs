@@ -23,13 +23,14 @@ impl<'a, 'b> PathDetail<'a, 'b> {
 }
 
 async fn check_file<'a, I: ContextImpl>(
+    dst_uid: &str,
     dst: &PathDetail<'a, '_>,
     src_ts: u64,
     context: &'a Context<I>,
 ) -> crate::Result<bool> {
     let cache = context.get_cache();
     let interactor = context.get_interactor();
-    if let Some((v, m)) = cache.get(&dst.user.hid, &dst.path).await? {
+    if let Some((v, m)) = cache.get(dst_uid, &dst.path).await? {
         if v == src_ts
             && match dst.user.check_file(&dst.path).await? {
                 FileStat::NotFound => {
@@ -40,7 +41,7 @@ async fn check_file<'a, I: ContextImpl>(
             }
         {
             interactor
-                .log(&format!("[Skip] copy to {}:{}", &dst.user.uid, &dst.path))
+                .log(&format!("[Skip] copy to {}:{}", &dst_uid, &dst.path))
                 .await;
             return Ok(false);
         }
@@ -73,22 +74,26 @@ async fn check_file<'a, I: ContextImpl>(
 }
 async fn check_copy_file<'a, 'b, I: ContextImpl>(
     src_user: &'a User,
+    dst_uid: &str,
     dst_user: &'a User,
     metadata: Metadata,
     dst_path: &'b String,
     context: &'a Context<I>,
 ) -> crate::Result<Option<CopyItem<'a, 'b>>> {
     let dst = PathDetail::new(dst_user, dst_path);
-    check_file(&dst, metadata.ts, context).await.map(|update| {
-        update.then(|| CopyItem {
-            src: PathDetail::new(src_user, metadata.path),
-            dst,
-            version: metadata.ts,
+    check_file(dst_uid, &dst, metadata.ts, context)
+        .await
+        .map(|update| {
+            update.then(|| CopyItem {
+                src: PathDetail::new(src_user, metadata.path),
+                dst,
+                version: metadata.ts,
+            })
         })
-    })
 }
 async fn check_copy_dir<'a, 'b, I: ContextImpl>(
     src_user: &'a User,
+    dst_uid: &str,
     dst_user: &'a User,
     dir: DirInfo,
     dst_path: &'b String,
@@ -97,7 +102,7 @@ async fn check_copy_dir<'a, 'b, I: ContextImpl>(
     let mut copy_info = Vec::new();
     for Metadata { path, ts } in dir.files {
         let dst = PathDetail::new(dst_user, format!("{}/{}", dst_path, path));
-        if check_file(&dst, ts, context).await? {
+        if check_file(dst_uid, &dst, ts, context).await? {
             copy_info.push(CopyItem {
                 src: PathDetail::new(src_user, format!("{}/{}", dir.path, path)),
                 dst,
@@ -107,11 +112,11 @@ async fn check_copy_dir<'a, 'b, I: ContextImpl>(
     }
     Ok(copy_info)
 }
-pub async fn check<'a, 'b, I: ContextImpl>(
-    target: &Target,
+pub async fn check<'a, 'b, 'c, I: ContextImpl>(
+    target: &'c Target,
     inner: &'b super::CopyInner,
     context: &'a Context<I>,
-) -> crate::Result<Vec<CopyItem<'a, 'b>>> {
+) -> crate::Result<(&'c str, &'c str, Vec<CopyItem<'a, 'b>>)> {
     let mut copy_info = Vec::new();
     let (src_uid, dst_uid) = target.get_uid()?;
     let src_user = context.get_user(src_uid, false)?;
@@ -122,15 +127,16 @@ pub async fn check<'a, 'b, I: ContextImpl>(
         debug!("check {src} -> {dst}");
         match ck_res {
             CheckInfo::File(file) => {
-                let copy = check_copy_file(src_user, dst_user, file, dst, context).await?;
+                let copy = check_copy_file(src_user, dst_uid, dst_user, file, dst, context).await?;
                 copy_info.extend(copy);
             }
             CheckInfo::Dir(info) => {
-                let copies = check_copy_dir(src_user, dst_user, info, dst, context).await?;
+                let copies =
+                    check_copy_dir(src_user, dst_uid, dst_user, info, dst, context).await?;
                 copy_info.extend(copies);
             }
         }
     }
     trace!("check over");
-    Ok(copy_info)
+    Ok((src_uid, dst_uid, copy_info))
 }

@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use russh::client::{self, AuthResult, Handle};
 use snafu::{whatever, ResultExt};
-use tracing::warn;
+use tokio::io::AsyncReadExt;
+use tracing::{info, warn};
 
 use crate::error;
 
@@ -10,7 +11,6 @@ use super::{dev::*, Client, SSHSession};
 
 #[derive(Debug)]
 pub struct SSHUserConfig {
-    pub uid: String,
     pub hid: String,
     pub host: String,
     pub is_system: bool,
@@ -19,9 +19,8 @@ pub struct SSHUserConfig {
 }
 
 impl SSHUserConfig {
-    pub fn new(uid: impl Into<String>, hid: impl Into<String>, host: impl Into<String>) -> Self {
+    pub fn new(hid: impl Into<String>, host: impl Into<String>) -> Self {
         Self {
-            uid: uid.into(),
             hid: hid.into(),
             host: host.into(),
             is_system: false,
@@ -33,9 +32,8 @@ impl SSHUserConfig {
 #[async_trait::async_trait]
 impl UserCast for SSHUserConfig {
     async fn cast(self) -> crate::Result<User> {
-        let id = self.uid.clone();
         let (h, user) = connect(self.host, self.passwd).await?;
-        let mut env = detect(&h, user).await?;
+        let mut p = detect(&h, user).await?;
         let channel = h.channel_open_session().await?;
         channel.request_subsystem(true, "sftp").await?;
 
@@ -45,16 +43,16 @@ impl UserCast for SSHUserConfig {
                 about: "crate sftp session",
             })?;
         if let Some(os) = self.os {
-            env = env.os(os);
+            p = p.os(os);
         }
-        let command_util = (&env).into();
+        let command_util = (&p).into();
         let sys = SSHSession {
             session: h,
             sftp,
             command_util,
         };
 
-        User::new(id.clone(), self.hid, self.is_system, None, env, sys).await
+        User::new(self.hid, p, self.is_system, sys).await
     }
 }
 
@@ -113,33 +111,60 @@ async fn connect(host: String, passwd: Option<String>) -> crate::Result<(Handle<
     );
 }
 
-async fn detect(h: &Handle<Client>, user: String) -> crate::Result<Environment> {
+async fn detect(h: &Handle<Client>, user: String) -> crate::Result<Params> {
     let mut channel = h.channel_open_session().await?;
     channel.exec(true, "env").await?;
-    let mut envs: Vec<u8> = Vec::new();
-    loop {
-        // There's an event available on the session channel
-        let Some(msg) = channel.wait().await else {
-            break;
-        };
-        if let russh::ChannelMsg::Data { data } = msg {
-            envs.extend(data.iter());
+    let mut output = String::with_capacity(1024);
+    channel
+        .make_reader()
+        .read_to_string(&mut output)
+        .await
+        .with_context(|_| error::IoSnafu { about: "read env" })?;
+    let mut p = Params::new(user);
+    fn extract<const S: usize>(output: &str, keys: &[&str; S]) -> [Option<String>; S] {
+        let mut values = [const { None }; S];
+        for line in output.split('\n') {
+            let mut kv = line.splitn(2, '=');
+            let Some(key) = kv.next() else {
+                continue;
+            };
+            let Some(value) = kv.next() else {
+                continue;
+            };
+            if let Some(i) = keys.iter().position(|&k| key == k) {
+                values[i] = Some(value.to_string());
+            }
         }
+        values
     }
-    let mut env = Environment::new(user);
-    for line in envs.split(|c| *c == b'\n') {
-        let mut kv = line.splitn(2, |c| *c == b'=');
-        let Some(key) = kv.next() else {
-            continue;
-        };
-        let Some(value) = kv.next() else {
-            continue;
-        };
-        if key.starts_with(b"HOME") {
-            env = env.home(std::str::from_utf8(value).unwrap());
-        } else if key.starts_with(b"XDG_SESSION_TYPE") {
-            env = env.os(std::str::from_utf8(value).unwrap());
-        }
+    let [home, session] = extract(&output, &["HOME", "XDG_SESSION_TYPE"]);
+    if let Some(home) = home {
+        info!("home: {}", home);
+        p = p.home(home);
     }
-    Ok(env)
+    if let Some(session) = session {
+        info!("session: {}", session);
+        p = p.session(session);
+    }
+    channel = h.channel_open_session().await?;
+    channel
+        // .exec(true, "cat /etc/os-release 2>/dev/null")
+        .exec(
+            true,
+            "sh -c 'cat /etc/os-release 2>/dev/null || cat /usr/lib/os-release 2>/dev/null'",
+        )
+        .await?;
+    channel
+        .make_reader()
+        .read_to_string(&mut output)
+        .await
+        .with_context(|_| error::IoSnafu {
+            about: "read /etc/os-release",
+        })?;
+    let [os] = extract(&output, &["ID"]);
+    if let Some(os) = os {
+        info!("os: {}", os);
+        p = p.os(os);
+    }
+    Ok(p)
 }

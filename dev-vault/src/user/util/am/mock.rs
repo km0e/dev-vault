@@ -13,7 +13,7 @@ impl From<MockAm> for BoxedAm {
 
 #[async_trait::async_trait]
 impl Am for MockAm {
-    async fn install(&self, _dev: &User, _package: &[String]) -> crate::Result<BoxedPtyProcess> {
+    async fn install(&self, _dev: &User, _packages: &str) -> crate::Result<BoxedPtyProcess> {
         whatever!("other unimplemented")
     }
 }

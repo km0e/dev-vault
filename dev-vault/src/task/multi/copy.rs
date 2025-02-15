@@ -47,7 +47,7 @@ impl<I: ContextImpl> Task<I> for CopyTask {
     where
         I: 'async_trait,
     {
-        let copy_info = check::check(target, &self.inner, &*context).await?;
+        let (src_uid, dst_uid, copy_info) = check::check(target, &self.inner, &*context).await?;
         if copy_info.is_empty() {
             debug!("do not need copy");
             return Ok(TaskStatus::DoNothing);
@@ -71,7 +71,7 @@ impl<I: ContextImpl> Task<I> for CopyTask {
             interactor
                 .log(&format!(
                     "[Exec] copy {}:{} -> {}:{}",
-                    &src_user.uid, &src_path, &dst_user.uid, &dst_path,
+                    &src_uid, &src_path, &dst_uid, &dst_path,
                 ))
                 .await;
             let m = {
@@ -99,7 +99,7 @@ impl<I: ContextImpl> Task<I> for CopyTask {
                     }
                 }
             };
-            cache.set(&dst_user.hid, &dst_path, version, m).await?;
+            cache.set(dst_uid, &dst_path, version, m).await?;
         }
         Ok(TaskStatus::Success)
     }
@@ -119,29 +119,21 @@ impl<I: ContextImpl> Task<I> for DryRunCopyTask {
     where
         I: 'async_trait,
     {
-        let copy_info = check::check(target, &self.inner, &*context).await?;
+        let (src_uid, dst_uid, copy_info) = check::check(target, &self.inner, &*context).await?;
         if copy_info.is_empty() {
             return Ok(TaskStatus::DoNothing);
         }
         let interactor = context.get_interactor();
         for CopyItem {
-            src:
-                PathDetail {
-                    user: src_user,
-                    path: src_path,
-                },
-            dst:
-                PathDetail {
-                    user: dst_user,
-                    path: dst_path,
-                },
+            src: PathDetail { path: src_path, .. },
+            dst: PathDetail { path: dst_path, .. },
             ..
         } in copy_info
         {
             interactor
                 .log(&format!(
                     "[Exec] copy {}:{} -> {}:{}",
-                    &src_user.uid, &src_path, &dst_user.uid, &dst_path,
+                    &src_uid, &src_path, &dst_uid, &dst_path,
                 ))
                 .await;
         }

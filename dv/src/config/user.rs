@@ -2,16 +2,13 @@ use std::path::PathBuf;
 
 use super::{default_hid, default_mount, default_uid};
 use async_trait::async_trait;
-use dev_vault::{
-    user::{self, User, UserCast, UserFilter},
-    Environment,
-};
+use dev_vault::user::{self, User, UserCast, UserFilter};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
 #[async_trait]
 pub trait UserComplete {
-    async fn cast(self, filter: &UserFilter) -> (Option<User>, Vec<User>);
+    async fn cast(self, filter: &UserFilter) -> (Option<(String, User)>, Vec<(String, User)>);
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,24 +43,23 @@ pub struct SSHDeviceConfig {
 
 #[async_trait]
 impl UserComplete for SSHDeviceConfig {
-    async fn cast(self, filter: &UserFilter) -> (Option<User>, Vec<User>) {
+    async fn cast(self, filter: &UserFilter) -> (Option<(String, User)>, Vec<(String, User)>) {
         let mut vec = Vec::new();
         for user in self.users {
             if filter.contains(&user.uid) {
-                let mut user_cfg = user::SSHUserConfig::new(user.uid, self.hid.clone(), user.host);
+                let mut user_cfg = user::SSHUserConfig::new(self.hid.clone(), user.host);
                 user_cfg.os = self.os.clone();
                 user_cfg.passwd = user.passwd;
-                vec.push(user_cfg.cast().await.expect("cast user"));
+                vec.push((user.uid, user_cfg.cast().await.expect("cast user")));
             }
         }
         let system = match self.system {
             Some(system) if filter.contains(&system.uid) => {
-                let mut system_cfg =
-                    user::SSHUserConfig::new(system.uid, self.hid.clone(), system.host);
+                let mut system_cfg = user::SSHUserConfig::new(self.hid.clone(), system.host);
                 system_cfg.is_system = true;
                 system_cfg.os = self.os.clone();
                 system_cfg.passwd = system.passwd;
-                Some(system_cfg.cast().await.expect("cast system"))
+                Some((system.uid, system_cfg.cast().await.expect("cast system")))
             }
             _ => None,
         };
@@ -101,29 +97,29 @@ pub struct LocalDeviceConfig {
 
 #[async_trait]
 impl UserComplete for LocalDeviceConfig {
-    async fn cast(self, filter: &UserFilter) -> (Option<User>, Vec<User>) {
-        let env = Environment::detect();
+    async fn cast(self, filter: &UserFilter) -> (Option<(String, User)>, Vec<(String, User)>) {
         let user = if filter.contains(&self.user.uid) {
             info!("cast user {}", self.user.uid);
-            vec![user::LocalConfig {
-                uid: self.user.uid,
-                hid: self.hid.clone(),
-                mount: self.user.mount,
-            }
-            .cast()
-            .await
-            .expect("cast user")]
+            vec![(
+                self.user.uid,
+                user::LocalConfig {
+                    hid: self.hid.clone(),
+                    mount: self.user.mount,
+                }
+                .cast()
+                .await
+                .expect("cast user"),
+            )]
         } else {
             vec![]
         };
         let system = match self.system {
             Some(system) if filter.contains(&system.uid) => {
-                let mut system_cfg =
-                    user::SSHUserConfig::new(system.uid, self.hid.clone(), system.host);
+                let mut system_cfg = user::SSHUserConfig::new(self.hid.clone(), system.host);
                 system_cfg.is_system = true;
                 system_cfg.passwd = system.passwd;
-                system_cfg.os = env.os;
-                Some(system_cfg.cast().await.expect("cast system"))
+                // system_cfg.os = env.os;//FIX:system os detect
+                Some((system.uid, system_cfg.cast().await.expect("cast system")))
             }
             _ => None,
         };

@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{fmt::Debug, path::Path};
 
 use snafu::ResultExt;
 
@@ -51,6 +51,15 @@ pub type CheckSrcResult = crate::Result<CheckInfo>;
 pub enum FileStat {
     Meta(Metadata),
     NotFound,
+}
+
+impl From<FileStat> for Option<Metadata> {
+    fn from(value: FileStat) -> Self {
+        match value {
+            FileStat::Meta(meta) => Some(meta),
+            FileStat::NotFound => None,
+        }
+    }
 }
 
 impl TryFrom<&Path> for FileStat {
@@ -149,6 +158,7 @@ pub type ExecResult = crate::Result<BoxedPtyProcess>;
 pub trait UserImpl {
     async fn check(&self, path: &str) -> CheckResult;
     async fn check_src(&self, path: &str) -> CheckSrcResult;
+    async fn glob_with_meta(&self, path: &str) -> crate::Result<Vec<Metadata>>;
     async fn copy(&self, src: &str, dst: &str) -> crate::Result<()>;
     async fn auto(&self, name: &str, action: &str) -> crate::Result<()>;
     async fn exec(&self, command: Script<'_, '_>) -> ExecResult;
@@ -156,6 +166,12 @@ pub trait UserImpl {
 }
 
 pub type BoxedUser = Box<dyn UserImpl + Send + Sync>;
+
+impl Debug for BoxedUser {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BoxedUser").finish()
+    }
+}
 
 macro_rules! into_boxed_device {
     ($t:ty) => {

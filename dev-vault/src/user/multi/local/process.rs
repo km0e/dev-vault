@@ -14,7 +14,6 @@ use tokio::{
     fs::File,
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
 };
-use tracing::debug;
 
 use crate::error;
 
@@ -174,7 +173,6 @@ impl PtyProcessImpl for PtyProcess {
                                  rw.shutdown().await?;
                              },
                              n => {
-                                 debug!("stdin: {}", String::from_utf8_lossy(&buf[..n]));
                                  rw.write_all(&buf[..n]).await?;
                                  rw.flush().await?;
                             }
@@ -184,7 +182,6 @@ impl PtyProcessImpl for PtyProcess {
                         match r? {
                             0 => break,
                             n => {
-                                 debug!("stdout: {}", String::from_utf8_lossy(&buf2[..n]));
                                  lw.write_all(&buf2[..n]).await?;
                                  lw.flush().await?;
                             }

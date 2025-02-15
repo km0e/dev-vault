@@ -11,13 +11,22 @@ pub struct AppTaskConfig {
 
 #[derive(Debug, Clone)]
 struct AppTask {
-    pub pkgs: Vec<String>,
+    pub pkgs: String,
 }
 
 impl AppTask {
     pub fn new(pkgs: impl IntoIterator<Item = impl Into<String>>) -> Self {
         Self {
-            pkgs: pkgs.into_iter().map(|n| n.into()).collect(),
+            pkgs: pkgs
+                .into_iter()
+                .map(|n| n.into())
+                .fold(String::new(), |mut acc, n| {
+                    if !acc.is_empty() {
+                        acc.push(' ');
+                    }
+                    acc.push_str(&n);
+                    acc
+                }),
         }
     }
 }

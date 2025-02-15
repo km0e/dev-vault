@@ -1,7 +1,5 @@
 mod cache;
 pub use cache::Cache;
-mod env;
-pub use env::Environment;
 
 pub mod error;
 pub use error::Error;

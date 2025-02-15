@@ -115,6 +115,46 @@ impl UserImpl for SSHSession {
         }
         whatever!("{path} is a {:?}", metadata.file_type());
     }
+    async fn glob_with_meta(&self, path: &str) -> crate::Result<Vec<Metadata>> {
+        let (path, metadata) = self
+            .metadata(path)
+            .await
+            .context(error::SFTPSnafu { about: path })?;
+        if metadata.is_dir() {
+            let mut stack = vec![path.to_string()];
+            let prefix = format!("{path}/");
+            let mut infos = Vec::new();
+            while let Some(path) = stack.pop() {
+                for entry in self
+                    .sftp
+                    .read_dir(&path)
+                    .await
+                    .context(error::SFTPSnafu { about: &path })?
+                {
+                    let sub_path = format!("{}/{}", path, entry.file_name());
+                    if entry.file_type().is_dir() {
+                        stack.push(sub_path);
+                        continue;
+                    }
+                    if entry.file_type().is_file() {
+                        if let Some(mtime) = entry.metadata().mtime {
+                            infos.push(Metadata {
+                                path: sub_path.strip_prefix(&prefix).unwrap().to_string(),
+                                ts: mtime.into(),
+                            });
+                        } else {
+                            warn!("can't get {sub_path} mtime");
+                        }
+                        continue;
+                    }
+                    warn!("find {:?} type file {sub_path}", entry.file_type());
+                }
+            }
+            Ok(infos)
+        } else {
+            whatever!("{path} is a {:?}", metadata.file_type());
+        }
+    }
     async fn copy(&self, src: &str, dst: &str) -> crate::Result<()> {
         let code = self.command_util.copy(self, src, dst).await?.wait().await?;
         if code != 0 {

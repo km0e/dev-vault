@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use std::collections::HashMap;
 use tracing::debug;
 use wrap::Index;
@@ -8,24 +7,15 @@ mod core;
 pub use core::{BoxedPtyProcess, CheckInfo, DirInfo, FileStat, Metadata, OpenFlags, Script};
 mod wrap;
 pub use wrap::{User, UserCast, UserFilter};
-mod util;
-use crate::{Interactor, PrintState};
 mod multi;
+mod util;
 pub use multi::*;
+mod params;
 
 #[derive(Default)]
 pub struct UserManager {
     store: Vec<User>,
     user: HashMap<String, Index>,
-}
-
-#[async_trait]
-impl PrintState for UserManager {
-    async fn print(&self, interactor: &(dyn Interactor + Sync)) {
-        for user in &self.store {
-            user.print(interactor).await;
-        }
-    }
 }
 
 impl UserManager {
@@ -37,19 +27,22 @@ impl UserManager {
     }
 }
 
-impl Extend<(Option<User>, Vec<User>)> for UserManager {
-    fn extend<T: IntoIterator<Item = (Option<User>, Vec<User>)>>(&mut self, iter: T) {
+impl Extend<(Option<(String, User)>, Vec<(String, User)>)> for UserManager {
+    fn extend<T: IntoIterator<Item = (Option<(String, User)>, Vec<(String, User)>)>>(
+        &mut self,
+        iter: T,
+    ) {
         for (system, users) in iter.into_iter() {
             let mut idx = Index::default();
-            if let Some(system) = system {
+            if let Some((uid, system)) = system {
                 idx.this = self.store.len();
                 idx.system = Some(idx.this);
-                self.user.insert(system.uid.clone(), idx);
+                self.user.insert(uid, idx);
                 self.store.push(system);
             }
-            for user in users {
+            for (uid, user) in users {
                 idx.this = self.store.len();
-                self.user.insert(user.uid.clone(), idx);
+                self.user.insert(uid, idx);
                 self.store.push(user);
             }
         }

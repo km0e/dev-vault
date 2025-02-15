@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use async_trait::async_trait;
 use mock::MockAm;
 
@@ -11,10 +13,15 @@ mod mock;
 
 #[async_trait]
 pub trait Am {
-    async fn install(&self, u: &User, package: &[String]) -> crate::Result<BoxedPtyProcess>;
+    async fn install(&self, u: &User, package: &str) -> crate::Result<BoxedPtyProcess>;
 }
 
 pub type BoxedAm = Box<dyn Am + Send + Sync>;
+impl Debug for BoxedAm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[Am]")
+    }
+}
 
 macro_rules! into_boxed_am {
     ($t:ty, $($tail:tt)*) => {
@@ -31,10 +38,7 @@ macro_rules! into_boxed_am {
 }
 pub(crate) use into_boxed_am;
 
-pub async fn new_am(u: &BoxedUser, e: &Environment) -> crate::Result<BoxedAm> {
-    let Some(os) = e.os.as_ref() else {
-        return Ok(MockAm {}.into());
-    };
+pub async fn new_am(u: &BoxedUser, os: &str) -> crate::Result<BoxedAm> {
     #[cfg(target_os = "linux")]
     Ok(linux::try_match(u, os)
         .await?

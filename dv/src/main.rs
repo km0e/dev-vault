@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use cache::SqliteCache;
 use clap::Parser;
-use dev_vault::{op::WrapContext, ExecContext, Interactor, PrintState};
+use dev_vault::{op::WrapContext, ExecContext, Interactor};
 use interactor::TermInteractor;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -38,7 +38,6 @@ async fn main() {
                 interactor.log(&format!("Load vault {}", id)).await;
             }
             let (um, plans) = config.cast(dir.clone(), plan_id.as_deref()).await;
-            um.print(&interactor).await;
             let cache = SqliteCache::new(&dir.join("cache.db"));
             let context = Arc::new(ExecContext::new(um, cache, interactor).await.wrap());
 
