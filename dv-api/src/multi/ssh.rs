@@ -1,10 +1,9 @@
 use super::dev::{self, *};
-use async_trait::async_trait;
 use russh::client;
 use russh_sftp::{client::SftpSession, protocol::StatusCode};
 use snafu::{whatever, ResultExt};
 use tokio::io::AsyncWriteExt;
-use tracing::{debug, info, warn};
+use tracing::warn;
 mod config;
 pub use config::SSHConfig;
 mod file;
@@ -23,101 +22,59 @@ impl client::Handler for Client {
     }
 }
 
-pub struct SSHSession {
+pub(crate) struct SSHSession {
     session: client::Handle<Client>,
     sftp: SftpSession,
+    #[cfg(feature = "path-home")]
+    home: Option<camino::Utf8PathBuf>,
     command_util: BoxedCommandUtil<Self>,
 }
 
 impl SSHSession {
-    async fn metadata(
-        &self,
-        path: &str,
-    ) -> std::result::Result<
-        (String, russh_sftp::protocol::FileAttributes),
-        russh_sftp::client::error::Error,
-    > {
-        let path = self.sftp.canonicalize(path).await?;
-        let metadata = self.sftp.metadata(&path).await?;
-        Ok((path, metadata))
+    // async fn metadata(
+    //     &self,
+    //     path: &str,
+    // ) -> std::result::Result<
+    //     (String, russh_sftp::protocol::FileAttributes),
+    //     russh_sftp::client::error::Error,
+    // > {
+    //     let path = self.sftp.canonicalize(path).await?;
+    //     let metadata = self.sftp.metadata(&path).await?;
+    //     Ok((path, metadata))
+    // }
+
+    #[cfg(feature = "path-home")]
+    fn expand_home<'a>(&self, path: &'a str) -> std::borrow::Cow<'a, camino::Utf8Path> {
+        if let Some(home) = &self.home {
+            if let Some(path) = path.strip_prefix('~') {
+                return home.join(path).into();
+            }
+        }
+        camino::Utf8Path::new(path).into()
     }
 }
 
 #[async_trait]
 impl UserImpl for SSHSession {
-    async fn check(&self, path: &str) -> Result<FileStat> {
-        debug!("check {path}");
-        // sftp canonicalize does not check if the file exists
-        match self.metadata(path).await {
-            Ok((path, metadata)) => {
-                let Some(mtime) = metadata.mtime else {
-                    whatever!("get mtime fail");
-                };
-                Ok(FileStat::Meta(Metadata {
-                    path,
-                    ts: mtime.into(),
-                }))
-            }
-            Err(russh_sftp::client::error::Error::Status(s))
-                if s.status_code == StatusCode::NoSuchFile =>
-            {
-                info!("{path} not found");
-                Ok(FileStat::NotFound)
-            }
-            Err(e) => Err(e).context(error::SFTPSnafu { about: path })?,
-        }
-    }
-    async fn check_src(&self, path: &str) -> Result<CheckInfo> {
-        let (path, metadata) = self
+    async fn file_attributes(&self, path: &str) -> Result<FileAttributes> {
+        #[cfg(feature = "path-home")]
+        let path = self.expand_home(path);
+        #[cfg(feature = "path-home")]
+        let path = path.as_str();
+
+        self.sftp
             .metadata(path)
             .await
-            .context(error::SFTPSnafu { about: path })?;
-        if metadata.is_dir() {
-            let mut stack = vec![path.to_string()];
-            let prefix = format!("{path}/");
-            let mut infos = Vec::new();
-            while let Some(path) = stack.pop() {
-                for entry in self
-                    .sftp
-                    .read_dir(&path)
-                    .await
-                    .context(error::SFTPSnafu { about: &path })?
-                {
-                    let sub_path = format!("{}/{}", path, entry.file_name());
-                    if entry.file_type().is_dir() {
-                        stack.push(sub_path);
-                        continue;
-                    }
-                    if entry.file_type().is_file() {
-                        if let Some(mtime) = entry.metadata().mtime {
-                            infos.push(Metadata {
-                                path: sub_path.strip_prefix(&prefix).unwrap().to_string(),
-                                ts: mtime.into(),
-                            });
-                        } else {
-                            warn!("can't get {sub_path} mtime");
-                        }
-                        continue;
-                    }
-                    warn!("find {:?} type file {sub_path}", entry.file_type());
-                }
-            }
-            return Ok(CheckInfo::Dir(DirInfo { path, files: infos }));
-        }
-        if metadata.is_regular() {
-            if let Some(mtime) = metadata.mtime {
-                return Ok(CheckInfo::File(Metadata {
-                    path,
-                    ts: mtime.into(),
-                }));
-            } else {
-                warn!("can't get {path} mtime");
-            }
-        }
-        whatever!("{path} is a {:?}", metadata.file_type());
+            .context(error::SFTPSnafu { about: path })
     }
-    async fn glob_with_meta(&self, path: &str) -> crate::Result<Vec<Metadata>> {
-        let (path, metadata) = self
+    async fn glob_file_meta(&self, path: &str) -> crate::Result<Vec<Metadata>> {
+        #[cfg(feature = "path-home")]
+        let path = self.expand_home(path);
+        #[cfg(feature = "path-home")]
+        let path = path.as_str();
+
+        let metadata = self
+            .sftp
             .metadata(path)
             .await
             .context(error::SFTPSnafu { about: path })?;
@@ -240,6 +197,11 @@ impl UserImpl for SSHSession {
         Ok(channel.into())
     }
     async fn open(&self, path: &str, opt: OpenFlags) -> crate::Result<BoxedFile> {
+        #[cfg(feature = "path-home")]
+        let path = self.expand_home(path);
+        #[cfg(feature = "path-home")]
+        let path = path.as_str();
+
         let open_flags = opt.into();
         let file = loop {
             match self.sftp.open_with_flags(path, open_flags).await {

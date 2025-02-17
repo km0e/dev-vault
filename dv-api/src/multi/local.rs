@@ -6,9 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use async_trait::async_trait;
 use process::PtyProcess;
-use rustix::path::Arg;
 use snafu::ResultExt;
 use systemd::Systemd;
 use tracing::{trace, warn};
@@ -20,9 +18,9 @@ mod systemd;
 #[derive(Debug)]
 pub struct LocalConfig {
     pub hid: String,
-    pub mount: PathBuf,
+    pub mount: camino::Utf8PathBuf,
 }
-pub fn detect() -> Params {
+fn detect() -> Params {
     let user = {
         #[cfg(target_os = "linux")]
         {
@@ -37,7 +35,6 @@ pub fn detect() -> Params {
             Some("windows".to_string())
         }
     };
-    //TODO:tidy code
     let mut p = Params::new(user);
     p.os = if cfg!(target_os = "linux") {
         etc_os_release::OsRelease::open()
@@ -67,7 +64,6 @@ pub fn detect() -> Params {
     } {
         p = p.session(session);
     }
-    p.home = home::home_dir();
     p
 }
 #[async_trait]
@@ -80,31 +76,58 @@ impl UserCast for LocalConfig {
     }
 }
 
-pub struct This {
+pub(crate) struct This {
+    #[cfg(feature = "path-home")]
+    home: Option<PathBuf>,
     systemd: Systemd, // TODO: add more
 }
 
 impl This {
     pub async fn new(is_system: bool) -> crate::Result<Self> {
         let systemd = Systemd::new(is_system).await?;
-        Ok(Self { systemd })
+        Ok(Self {
+            #[cfg(feature = "path-home")]
+            home: home::home_dir(),
+            systemd,
+        })
+    }
+    #[cfg(feature = "path-home")]
+    fn expand_home<'a, 'b: 'a>(&'b self, path: &'a str) -> std::borrow::Cow<'a, Path> {
+        if let Some(home) = &self.home {
+            if let Some(path) = path.strip_prefix("~/") {
+                return home.join(path).into();
+            } else if path == "~" {
+                return home.into();
+            }
+        }
+        Path::new(path).into()
     }
 }
 
 #[async_trait]
 impl UserImpl for This {
-    async fn check(&self, path: &str) -> Result<FileStat> {
-        Path::new(path).try_into()
+    async fn file_attributes(&self, path: &str) -> Result<FileAttributes> {
+        #[cfg(feature = "path-home")]
+        let path = self.expand_home(path);
+
+        std::fs::metadata(&path)
+            .map(|meta| (&meta).into())
+            .with_context(|_| error::IoSnafu {
+                about: format!("Cannot get metadata of {}", path.display()),
+            })
     }
-    async fn check_src(&self, path: &str) -> Result<CheckInfo> {
-        let metadata = PathBuf::from(path)
+    async fn glob_file_meta(&self, path: &str) -> Result<Vec<Metadata>> {
+        #[cfg(feature = "path-home")]
+        let path = self.expand_home(path);
+
+        let metadata = <&Path>::from(&path)
             .metadata()
             .with_context(|_| error::IoSnafu {
-                about: format!("Cannot get metadata of {}", path),
+                about: format!("Cannot get metadata of {}", path.display()),
             })?;
         if metadata.is_dir() {
             let mut result = Vec::new();
-            for entry in walkdir::WalkDir::new(path)
+            for entry in walkdir::WalkDir::new(&path)
                 .into_iter()
                 .filter_map(|e| e.ok())
             {
@@ -123,50 +146,7 @@ impl UserImpl for This {
                     continue;
                 };
                 let modified = modified.as_secs();
-                let Ok(rel_path) = file_path.strip_prefix(path) else {
-                    continue;
-                };
-                result.push(Metadata {
-                    path: rel_path.to_string_lossy().to_string(),
-                    ts: modified,
-                });
-            }
-            Ok(CheckInfo::Dir(DirInfo {
-                path: path.to_string_lossy().to_string(),
-                files: result,
-            }))
-        } else {
-            Ok(CheckInfo::File(Path::new(path).try_into()?))
-        }
-    }
-    async fn glob_with_meta(&self, path: &str) -> Result<Vec<Metadata>> {
-        let metadata = PathBuf::from(path)
-            .metadata()
-            .with_context(|_| error::IoSnafu {
-                about: format!("Cannot get metadata of {}", path),
-            })?;
-        if metadata.is_dir() {
-            let mut result = Vec::new();
-            for entry in walkdir::WalkDir::new(path)
-                .into_iter()
-                .filter_map(|e| e.ok())
-            {
-                let file_path = entry.path();
-                let metadata = match file_path.metadata() {
-                    Ok(meta) => meta,
-                    Err(_) => continue,
-                };
-                if metadata.is_dir() {
-                    continue;
-                }
-                let Ok(modified) = metadata.modified() else {
-                    continue;
-                };
-                let Ok(modified) = modified.duration_since(std::time::UNIX_EPOCH) else {
-                    continue;
-                };
-                let modified = modified.as_secs();
-                let Ok(rel_path) = file_path.strip_prefix(path) else {
+                let Ok(rel_path) = file_path.strip_prefix(&path) else {
                     continue;
                 };
                 result.push(Metadata {
@@ -177,7 +157,7 @@ impl UserImpl for This {
             Ok(result)
         } else {
             Err(error::Error::Whatever {
-                message: format!("{} is not a directory", path),
+                message: format!("{} is not a directory", path.display()),
             })
         }
     }
@@ -227,10 +207,15 @@ impl UserImpl for This {
         Ok(cmd.into())
     }
     async fn open(&self, path: &str, opt: OpenFlags) -> Result<BoxedFile> {
+        #[cfg(feature = "path-home")]
+        let path = self.expand_home(path);
+
         let file = tokio::fs::OpenOptions::from(opt)
-            .open(path)
+            .open(&path)
             .await
-            .with_context(|_| error::IoSnafu { about: path })?;
+            .with_context(|_| error::IoSnafu {
+                about: path.to_string_lossy().to_string(),
+            })?;
         Ok(Box::new(file))
     }
 }

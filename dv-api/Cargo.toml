@@ -4,26 +4,27 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+snafu.workspace = true
+tokio.workspace = true
+tracing.workspace = true
 async-trait.workspace = true
+
 bitflags = "2.8.0"
+tokio-util = "0.7.13"
+tempfile = "3.16.0"
 etc-os-release = "0.1.1"
 fastrand = "2.3.0"
-futures = "0.3.31"
-home = { version = "0.5.11" }
-path-dedot = "3.1.1"
+home = { version = "0.5.11", optional = true }
 russh = { version = "0.50.2", features = ["async-trait"] }
 russh-config = "0.50.0"
 russh-sftp = "2.0.8"
 rustix = { version = "0.38.44", features = ["pty"] }
 rustix-openpty = "0.1.1"
-snafu.workspace = true
-tempfile = "3.16.0"
-tokio.workspace = true
-tokio-util = "0.7.13"
-tracing.workspace = true
 walkdir = "2.5.0"
-whoami = "1.5.2"
 zbus = "5.5.0"
+camino = "1.1.9"
 
-[dev-dependencies]
-tracing-test = { version = "0.2.5" }
+
+[features]
+default = ["path-home"]
+path-home = ["dep:home"]

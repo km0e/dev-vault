@@ -6,6 +6,8 @@ use crate::error;
 
 use super::util::AsyncStream;
 
+pub use russh_sftp::protocol::FileAttributes;
+
 #[derive(Debug, Clone)]
 pub struct Metadata {
     pub path: String,
@@ -39,39 +41,6 @@ pub struct DirInfo {
 pub enum CheckInfo {
     Dir(DirInfo),
     File(Metadata),
-}
-
-pub enum FileStat {
-    Meta(Metadata),
-    NotFound,
-}
-
-impl From<FileStat> for Option<Metadata> {
-    fn from(value: FileStat) -> Self {
-        match value {
-            FileStat::Meta(meta) => Some(meta),
-            FileStat::NotFound => None,
-        }
-    }
-}
-
-impl TryFrom<&Path> for FileStat {
-    type Error = crate::Error;
-    fn try_from(path: &Path) -> crate::Result<Self> {
-        let mtime = match path.metadata() {
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Self::NotFound),
-            res => res,
-        }
-        .and_then(|meta| meta.modified())
-        .with_context(|_| error::IoSnafu {
-            about: path.display().to_string(),
-        })?;
-        let mtime = mtime.duration_since(std::time::UNIX_EPOCH)?.as_secs();
-        Ok(Self::Meta(Metadata {
-            path: path.to_string_lossy().to_string(),
-            ts: mtime,
-        }))
-    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]

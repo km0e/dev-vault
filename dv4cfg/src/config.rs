@@ -1,8 +1,5 @@
 use crate::task::config::*;
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashMap, path::Path};
 
 use group::TaskGroupConfig;
 use serde::{Deserialize, Serialize};
@@ -12,7 +9,7 @@ use tracing::info;
 use user::{LocalDeviceConfig, SSHDeviceConfig};
 use xcfg::XCfg;
 
-pub fn default_mount() -> PathBuf {
+pub fn default_mount() -> camino::Utf8PathBuf {
     "~/.config/dv".into()
 }
 pub fn default_hid() -> String {
@@ -99,7 +96,7 @@ impl<I: ContextImpl> Config<I> {
             tasks,
         })
     }
-    pub async fn cast(&self, this_dir: PathBuf, id: Option<&str>) -> (UserManager, Vec<Plan<I>>) {
+    pub async fn cast(&self, id: Option<&str>) -> (UserManager, Vec<Plan<I>>) {
         match id {
             Some(id) => info!("cast group {}", id),
             None => info!("cast all group"),
@@ -125,8 +122,7 @@ impl<I: ContextImpl> Config<I> {
                 .collect(),
         };
         let mut dm = UserManager::default();
-        if let Some(mut dev) = self.local.clone() {
-            dev.user.mount = this_dir;
+        if let Some(dev) = self.local.clone() {
             dm.extend(Some(dev.cast(&filter).await));
         }
         let mut ssh_dev = Vec::with_capacity(self.ssh.len());

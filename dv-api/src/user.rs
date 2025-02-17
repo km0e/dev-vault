@@ -1,16 +1,15 @@
 use std::fmt::Debug;
 
 use crate::{
-    fs::{BoxedFile, CheckInfo, FileStat, Metadata, OpenFlags},
+    fs::{BoxedFile, FileAttributes, Metadata, OpenFlags},
     process::{BoxedPtyProcess, Script},
     Result,
 };
 
 #[async_trait::async_trait]
 pub trait UserImpl {
-    async fn check(&self, path: &str) -> Result<FileStat>;
-    async fn check_src(&self, path: &str) -> Result<CheckInfo>;
-    async fn glob_with_meta(&self, path: &str) -> Result<Vec<Metadata>>;
+    async fn file_attributes(&self, path: &str) -> Result<FileAttributes>;
+    async fn glob_file_meta(&self, path: &str) -> Result<Vec<Metadata>>;
     async fn copy(&self, src: &str, dst: &str) -> Result<()>;
     async fn open(&self, path: &str, opt: OpenFlags) -> Result<BoxedFile>;
     async fn auto(&self, name: &str, action: &str) -> Result<()>;

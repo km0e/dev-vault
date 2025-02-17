@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use crate::user::UserFilter;
 
 use super::{default_hid, default_mount, default_uid};
@@ -120,7 +118,6 @@ impl UserComplete for LocalDeviceConfig {
                 let mut system_cfg = SSHConfig::new(self.hid.clone(), system.host);
                 system_cfg.is_system = true;
                 system_cfg.passwd = system.passwd;
-                // system_cfg.os = env.os;//FIX:system os detect
                 Some((system.uid, system_cfg.cast().await.expect("cast system")))
             }
             _ => None,
@@ -152,7 +149,7 @@ pub struct LocalConfig {
     #[serde(default = "default_uid")]
     pub uid: String,
     #[serde(default = "default_mount")]
-    pub mount: PathBuf,
+    pub mount: camino::Utf8PathBuf,
 }
 
 impl Default for LocalConfig {

@@ -17,7 +17,6 @@ impl SqliteCache {
                 device TEXT NOT NULL,
                 path TEXT NOT NULL,
                 version INTEGER NOT NULL,
-                modified INTEGER NOT NULL,
                 PRIMARY KEY (device, path)
             )",
             [],
@@ -30,11 +29,11 @@ impl SqliteCache {
 }
 
 impl SqliteCache {
-    pub async fn get(&self, hid: &str, path: &str) -> Result<Option<(u64, u64)>> {
+    pub async fn get(&self, hid: &str, path: &str) -> Result<Option<u64>> {
         let row = self.conn.lock().await.query_row(
-            "SELECT version, modified FROM cache WHERE device = ? AND path = ?",
+            "SELECT version FROM cache WHERE device = ? AND path = ?",
             [hid, path],
-            |row| Ok((row.get::<_, u64>(0)?, row.get::<_, u64>(1)?)),
+            |row| row.get::<_, u64>(0),
         );
         match row {
             Ok(fs) => Ok(Some(fs)),
@@ -42,14 +41,14 @@ impl SqliteCache {
             Err(e) => Err(e),
         }
     }
-    pub async fn set(&self, hid: &str, path: &str, version: u64, modified: u64) -> Result<()> {
-        info!("cache set: {} {} {} {}", hid, path, version, modified);
+    pub async fn set(&self, hid: &str, path: &str, version: u64) -> Result<()> {
+        info!("cache set: {} {} {}", hid, path, version);
         self.conn
             .lock()
             .await
             .execute(
-                "INSERT OR REPLACE INTO cache (device, path, version, modified) VALUES (?, ?, ?, ?)",
-                [hid, path, &version.to_string(), &modified.to_string()],
+                "INSERT OR REPLACE INTO cache (device, path, version) VALUES (?, ?, ?, ?)",
+                [hid, path, &version.to_string()],
             )
             .map(|_| ())
     }

@@ -1,7 +1,7 @@
-use std::{borrow::Cow, collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path};
 
 use dv_api::{
-    fs::{Metadata, OpenFlags},
+    fs::{CheckInfo, DirInfo, Metadata, OpenFlags},
     process::{Interactor, Script},
     User, UserCast,
 };
@@ -179,20 +179,23 @@ impl Dv {
             .await;
         Some(())
     }
-    pub async fn check_copy_file(
+    async fn get_user(&self, uid: impl AsRef<str>) -> Option<&User> {
+        Some(assert_option!(
+            self.users.get(uid.as_ref()),
+            &self.interactor,
+            || format!("user {} not found", uid.as_ref())
+        ))
+    }
+    async fn check_copy_file(
         &self,
-        src_uid: &str,
         src: &User,
+        src_uid: &str,
         src_path: &str,
         dst_uid: &str,
         dst_path: &str,
         ts: u64,
     ) -> Option<bool> {
-        let dst = assert_option!(self.users.get(dst_uid), &self.interactor, || format!(
-            "dst user {} not found",
-            dst_uid
-        ));
-
+        let dst = self.get_user(dst_uid).await?;
         let cache = assert_result!(self.cache.get(dst_uid, dst_path).await, &self.interactor);
         let res = if cache.is_some_and(|dst_ts| {
             if dst_ts != ts {
@@ -238,6 +241,34 @@ impl Dv {
             .await;
         Some(res)
     }
+
+    async fn check_copy_dir(
+        &self,
+        src: &User,
+        src_uid: &str,
+        src_path: impl Into<String>,
+        dst_uid: &str,
+        dst_path: impl Into<String>,
+        meta: Vec<Metadata>,
+    ) -> Option<bool> {
+        let mut src_path = src_path.into();
+        let mut dst_path = dst_path.into();
+        let src_len = src_path.len();
+        let dst_len = dst_path.len();
+        let mut success = false;
+        for Metadata { path, ts } in meta {
+            src_path.truncate(src_len);
+            src_path.push_str(&path);
+            dst_path.truncate(dst_len);
+            dst_path.push_str(&path);
+            let res = self
+                .check_copy_file(src, src_uid, &src_path, dst_uid, &dst_path, ts)
+                .await?;
+            success |= res;
+        }
+        Some(success)
+    }
+
     #[rune::function(path = Self::copy)]
     async fn copy(
         this: Ref<Self>,
@@ -255,49 +286,42 @@ impl Dv {
         let src_uid = src_uid.as_ref();
         let dst_uid = dst_uid.as_ref();
         let src_path = src_path.as_ref();
-        let dst_path = dst_path.as_ref();
-        let src = assert_option!(this.users.get(src_uid), &this.interactor, || format!(
-            "src user {} not found",
-            src_uid
-        ));
+        let mut dst_path = dst_path.to_string();
+        let src = this.get_user(src_uid).await?;
         if src_path.ends_with('/') {
-            let meta = assert_result!(src.glob_with_meta(src_path).await, &this.interactor);
-            if dst_path.ends_with('/') {
-                unimplemented!()
-            } else {
-                let mut success = false;
-                for Metadata { path, ts } in meta {
-                    let src_path = format!("{}{}", src_path, path);
-                    let dst_path = format!("{}/{}", dst_path, path);
-                    let res = this
-                        .check_copy_file(src_uid, src, &src_path, dst_uid, &dst_path, ts)
-                        .await?;
-                    success |= res;
-                }
-                Some(success)
+            let DirInfo { path, files } =
+                assert_result!(src.check_dir(src_path).await, &this.interactor);
+            if !dst_path.ends_with('/') {
+                dst_path.push('/');
             }
-        } else {
-            let meta = assert_result!(src.check_file(src_path).await, &this.interactor);
-            let Metadata { path, ts } = assert_option!(meta.into(), &this.interactor, || format!(
-                "src file {} not found",
-                src_path
-            ));
-            let dst_path = dst_path
-                .strip_suffix('/')
-                .map(|_| {
-                    format!(
-                        "{}{}",
-                        dst_path,
-                        src_path
-                            .rsplit_once('/')
-                            .map(|(_, name)| name)
-                            .unwrap_or(src_path)
-                    )
-                    .into()
-                })
-                .unwrap_or(Cow::Borrowed(dst_path));
-            this.check_copy_file(src_uid, src, &path, dst_uid, &dst_path, ts)
+            this.check_copy_dir(src, src_uid, path, dst_uid, dst_path, files)
                 .await
+        } else {
+            let info = assert_result!(src.check_path(src_path).await, &this.interactor);
+            if dst_path.ends_with('/') {
+                dst_path.push_str(
+                    src_path
+                        .rsplit_once('/')
+                        .map(|(_, name)| name)
+                        .unwrap_or(src_path),
+                );
+            };
+            match info {
+                CheckInfo::Dir(dir) => {
+                    dst_path.push('/');
+                    this.check_copy_dir(src, src_uid, dir.path, dst_uid, dst_path, dir.files)
+                        .await
+                }
+                CheckInfo::File(file) => {
+                    let Metadata { path, ts } = assert_option!(
+                        file.into(),
+                        &this.interactor,
+                        || format!("src file {} not found", src_path)
+                    );
+                    this.check_copy_file(src, src_uid, &path, dst_uid, &dst_path, ts)
+                        .await
+                }
+            }
         }
     }
     #[rune::function(path = Self::exec)]

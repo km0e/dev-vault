@@ -1,13 +1,11 @@
-use std::{borrow::Cow, path::Path};
+use std::borrow::Cow;
 
 use async_trait::async_trait;
-use path_dedot::ParseDot;
-use snafu::{whatever, ResultExt};
+use snafu::whatever;
 use tracing::info;
 
 use crate::{
-    error,
-    fs::{BoxedFile, CheckInfo, FileStat, Metadata, OpenFlags},
+    fs::{BoxedFile, CheckInfo, DirInfo, FileAttributes, Metadata, OpenFlags},
     params::Params,
     process::{BoxedPtyProcess, DynInteractor, Script},
     user::BoxedUser,
@@ -38,8 +36,8 @@ impl User {
         dev: impl Into<BoxedUser>,
     ) -> crate::Result<Self> {
         info!(
-            "new user:{} os:{} session:{:?} home:{:?} mount:{:?}",
-            params.user, params.os, params.session, params.home, params.mount
+            "new user:{} os:{} session:{:?} mount:{:?}",
+            params.user, params.os, params.session, params.mount
         );
         let inner = dev.into();
         let am = super::util::new_am(&inner, &params.os).await?;
@@ -51,48 +49,99 @@ impl User {
             am,
         })
     }
-    fn normalize<'a>(&self, path: &'a Path) -> crate::Result<Cow<'a, Path>> {
-        let path = path
-            .parse_dot()
-            .with_context(|_| error::IoSnafu { about: "dedot" })?;
+    // fn normalize<'a>(&self, path: &'a Path) -> crate::Result<Cow<'a, Path>> {
+    //     let path = path
+    //         .parse_dot()
+    //         .with_context(|_| error::IoSnafu { about: "dedot" })?;
+    //     let path = if path.has_root() {
+    //         path
+    //     } else {
+    //         let path = match (
+    //             path.strip_prefix("~"),
+    //             self.params.home.as_ref(),
+    //             self.params.mount.as_ref(),
+    //         ) {
+    //             (Ok(path), Some(home), _) => home.join(path),
+    //             (Ok(_), None, _) => whatever!("we need home"),
+    //             (Err(_), _, Some(mount)) => mount.join(path),
+    //             (Err(_), Some(home), None) => home.join(path),
+    //             _ => whatever!("we need mount or home"),
+    //         };
+    //         Cow::Owned(path)
+    //     };
+    //     Ok(path)
+    // }
+    fn normalize2<'a>(
+        &self,
+        path: impl Into<&'a camino::Utf8Path>,
+    ) -> crate::Result<Cow<'a, camino::Utf8Path>> {
+        let path = path.into();
+        // let path = path
+        //     .parse_dot()
+        //     .with_context(|_| error::IoSnafu { about: "dedot" })?;
         let path = if path.has_root() {
-            path
+            path.into()
         } else {
-            let path = match (
-                path.strip_prefix("~"),
-                self.params.home.as_ref(),
-                self.params.mount.as_ref(),
-            ) {
-                (Ok(path), Some(home), _) => home.join(path),
-                (Ok(_), None, _) => whatever!("we need home"),
-                (Err(_), _, Some(mount)) => mount.join(path),
-                (Err(_), Some(home), None) => home.join(path),
-                _ => whatever!("we need mount or home"),
+            let path = match (path.starts_with("~"), self.params.mount.as_ref()) {
+                (false, Some(mount)) => mount.join(path).into(),
+                _ => Cow::Borrowed(path),
             };
-            Cow::Owned(path)
+
+            // let path = match (
+            //     path.strip_prefix("~"),
+            //     self.params.mount.as_ref(),
+            // ) {
+            //     (Ok(path), Some(home), _) => home.join(path),
+            //     (Ok(_), None, _) => whatever!("we need home"),
+            //     (Err(_), _, Some(mount)) => mount.join(path),
+            //     (Err(_), Some(home), None) => home.join(path),
+            //     _ => whatever!("we need mount or home"),
+            // };
+            path
         };
         Ok(path)
     }
-    pub async fn check_file(&self, path: &str) -> Result<FileStat> {
+    pub async fn check_file(&self, path: &str) -> Result<FileAttributes> {
         self.inner
-            .check(&self.normalize(Path::new(path))?.to_string_lossy())
+            .file_attributes(self.normalize2(path)?.as_str())
             .await
     }
-    pub async fn check_src(&self, path: &str) -> Result<CheckInfo> {
-        self.inner
-            .check_src(&self.normalize(Path::new(path))?.to_string_lossy())
-            .await
+    pub async fn check_path<'a, 'b: 'a>(&'b self, path: &'a str) -> Result<CheckInfo> {
+        let path = self.normalize2(path)?;
+        let path = path.as_str();
+        let fa = self.inner.file_attributes(path).await?;
+        let info = if fa.is_dir() {
+            let files = self.inner.glob_file_meta(path).await?;
+            CheckInfo::Dir(DirInfo {
+                path: path.to_string(),
+                files,
+            })
+        } else {
+            let ts = match fa.mtime {
+                Some(time) => time as u64,
+                None => whatever!("{path} mtime"),
+            };
+            CheckInfo::File(Metadata {
+                path: path.to_string(),
+                ts,
+            })
+        };
+        Ok(info)
     }
-    pub async fn glob_with_meta(&self, path: &str) -> Result<Vec<Metadata>> {
-        self.inner
-            .glob_with_meta(&self.normalize(Path::new(path))?.to_string_lossy())
-            .await
+    pub async fn check_dir(&self, path: &str) -> Result<DirInfo> {
+        let path = self.normalize2(path)?;
+        let path = path.as_str();
+        let metadata = self.inner.glob_file_meta(path).await?;
+        Ok(DirInfo {
+            path: path.to_string(),
+            files: metadata,
+        })
     }
     pub async fn copy(&self, src: &str, dst: &str) -> Result<()> {
         self.inner
             .copy(
-                &self.normalize(Path::new(src))?.to_string_lossy(),
-                &self.normalize(Path::new(dst))?.to_string_lossy(),
+                self.normalize2(src)?.as_str(),
+                self.normalize2(dst)?.as_str(),
             )
             .await
     }
@@ -106,8 +155,6 @@ impl User {
         self.inner.exec(command).await
     }
     pub async fn open(&self, path: &str, opt: OpenFlags) -> crate::Result<BoxedFile> {
-        self.inner
-            .open(&self.normalize(Path::new(path))?.to_string_lossy(), opt)
-            .await
+        self.inner.open(self.normalize2(path)?.as_str(), opt).await
     }
 }

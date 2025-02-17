@@ -42,7 +42,7 @@ async fn main() {
             if let Some(id) = config.id.as_deref() {
                 interactor.log(&format!("Load vault {}", id)).await;
             }
-            let (um, plans) = config.cast(dir.clone(), plan_id.as_deref()).await;
+            let (um, plans) = config.cast(plan_id.as_deref()).await;
             let cache = SqliteCache::new(&dir.join("cache.db"));
             let context = Arc::new(ExecContext::new(um, cache, interactor).await.wrap());
 

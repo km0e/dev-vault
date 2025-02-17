@@ -33,7 +33,7 @@ impl SSHConfig {
 impl UserCast for SSHConfig {
     async fn cast(self) -> crate::Result<User> {
         let (h, user) = connect(self.host, self.passwd).await?;
-        let mut p = detect(&h, user).await?;
+        let (home, mut p) = detect(&h, user).await?;
         let channel = h.channel_open_session().await?;
         channel.request_subsystem(true, "sftp").await?;
 
@@ -49,6 +49,8 @@ impl UserCast for SSHConfig {
         let sys = SSHSession {
             session: h,
             sftp,
+            #[cfg(feature = "path-home")]
+            home,
             command_util,
         };
 
@@ -111,7 +113,10 @@ async fn connect(host: String, passwd: Option<String>) -> crate::Result<(Handle<
     );
 }
 
-async fn detect(h: &Handle<Client>, user: String) -> crate::Result<Params> {
+async fn detect(
+    h: &Handle<Client>,
+    user: String,
+) -> crate::Result<(Option<camino::Utf8PathBuf>, Params)> {
     let mut channel = h.channel_open_session().await?;
     channel.exec(true, "env").await?;
     let mut output = String::with_capacity(1024);
@@ -137,18 +142,21 @@ async fn detect(h: &Handle<Client>, user: String) -> crate::Result<Params> {
         }
         values
     }
+
+    #[cfg(feature = "path-home")]
     let [home, session] = extract(&output, &["HOME", "XDG_SESSION_TYPE"]);
-    if let Some(home) = home {
-        info!("home: {}", home);
-        p = p.home(home);
-    }
+
+    #[cfg(not(feature = "path-home"))]
+    let [session] = extract(&output, &["XDG_SESSION_TYPE"]);
+    #[cfg(not(feature = "path-home"))]
+    let home = None;
+
     if let Some(session) = session {
         info!("session: {}", session);
         p = p.session(session);
     }
     channel = h.channel_open_session().await?;
     channel
-        // .exec(true, "cat /etc/os-release 2>/dev/null")
         .exec(
             true,
             "sh -c 'cat /etc/os-release 2>/dev/null || cat /usr/lib/os-release 2>/dev/null'",
@@ -166,5 +174,5 @@ async fn detect(h: &Handle<Client>, user: String) -> crate::Result<Params> {
         info!("os: {}", os);
         p = p.os(os);
     }
-    Ok(p)
+    Ok((home.map(|h| h.into()), p))
 }

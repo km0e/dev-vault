@@ -40,6 +40,7 @@ impl Interactor for TermInteractor {
             })?;
         raw.flush()
             .with_context(|_| error::IoSnafu { about: "flush raw" })?;
+        //NOTE:tokio::io will block the terminal
         let stdin =
             tokio_fd::AsyncFd::try_from(0).with_context(|_| error::IoSnafu { about: "stdin" })?;
         let stdout =

@@ -1,6 +1,6 @@
 use super::dev::*;
 use dv_api::{
-    fs::{CheckInfo, DirInfo, FileStat, Metadata},
+    fs::{CheckInfo, DirInfo, Metadata},
     User,
 };
 use std::borrow::Cow;
@@ -34,45 +34,18 @@ async fn check_file<'a, I: ContextImpl>(
 ) -> Result<bool> {
     let cache = context.get_cache();
     let interactor = context.get_interactor();
-    if let Some((v, m)) = cache.get(dst_uid, &dst.path).await? {
-        if v == src_ts
-            && match dst.user.check_file(&dst.path).await? {
-                FileStat::NotFound => {
-                    debug!("{} not found", dst.path);
-                    false
-                }
-                FileStat::Meta(meta) => meta.ts == m,
-            }
-        {
-            interactor
-                .log(&format!("[Skip] copy to {}:{}", &dst_uid, &dst.path))
-                .await;
-            return Ok(false);
-        }
+    if cache
+        .get(dst_uid, &dst.path)
+        .await?
+        .is_some_and(|v| v == src_ts)
+    {
+        interactor
+            .log(&format!("[Skip] copy to {}:{}", &dst_uid, &dst.path))
+            .await;
+        return Ok(false);
     }
 
     info!("[Task] {} needs to be updated to {}", dst.path, src_ts);
-    // if !cache.check_update(&dst.user.hid, &dst.path).await?
-    //     && {
-    //         #[cfg(debug_assertions)]
-    //         debug!("{} should be updated", dst.path);
-    //         true
-    //     }
-    //     && match dst.user.check_file(&dst.path).await? {
-    //         FileStat::NotFound => {
-    //             debug!("{} not found", dst.path);
-    //             false
-    //         }
-    //         FileStat::Meta(meta) => meta.ts == src_ts,
-    //     }
-    // {
-    //     interactor
-    //         .log(&format!("[Skip] copy to {}:{}", &dst.user.uid, &dst.path))
-    //         .await;
-    //     return Ok(false);
-    // } else {
-    //     info!("[Task] {} needs to be updated to {}", dst.path, src_ts);
-    // }
     trace!("check over");
     Ok(true)
 }
@@ -127,7 +100,7 @@ pub async fn check<'a, 'b, 'c, I: ContextImpl>(
     let dst_user = context.get_user(dst_uid, false)?;
 
     for (src, dst) in inner.pair.iter() {
-        let ck_res = src_user.check_src(src).await?;
+        let ck_res = src_user.check_path(src).await?;
         debug!("check {src} -> {dst}");
         match ck_res {
             CheckInfo::File(file) => {
