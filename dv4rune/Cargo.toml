@@ -1,0 +1,19 @@
+[package]
+name = "dv4rune"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dv-api = { path = "../dv-api" }
+rune = "0.13.4"
+rune-modules = "0.13.4"
+tokio.workspace = true
+rusqlite = "0.33.0"
+tracing.workspace = true
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+snafu.workspace = true
+clap = { version = "4.5.29", features = ["derive"] }
+home = { version = "0.5.11" }
+termion = "4.0.3"
+tokio-fd = "0.3.0"
+async-trait.workspace = true

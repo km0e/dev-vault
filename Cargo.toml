@@ -1,5 +1,5 @@
 [workspace]
-members = ["dev-vault", "dv", "dve"]
+members = ["dv-api", "dv4cfg", "dv4rune"]
 resolver = "2"
 
 [workspace.dependencies]
