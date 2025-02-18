@@ -2,6 +2,8 @@ mod arg;
 mod cache;
 mod dvl;
 mod interactor;
+mod multi;
+mod utils;
 
 use clap::Parser;
 use rune::{
