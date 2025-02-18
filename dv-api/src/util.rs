@@ -3,6 +3,8 @@ use tokio::io::{AsyncRead, AsyncWrite};
 mod am;
 pub use am::{new_am, BoxedAm};
 mod command;
+mod dev_info;
+pub use dev_info::Os;
 mod dev {
     pub use crate::{params::*, user::*, Result};
     pub use async_trait::async_trait;

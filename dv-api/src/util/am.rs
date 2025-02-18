@@ -46,9 +46,13 @@ macro_rules! into_boxed_am {
 }
 pub(crate) use into_boxed_am;
 
-pub async fn new_am(u: &BoxedUser, os: &str) -> crate::Result<BoxedAm> {
-    #[cfg(target_os = "linux")]
-    Ok(linux::try_match(u, os)
-        .await?
-        .unwrap_or_else(|| MockAm {}.into()))
+use super::Os;
+
+pub async fn new_am(u: &BoxedUser, os: &Os) -> crate::Result<BoxedAm> {
+    match os {
+        Os::Linux(os) => linux::try_match(u, os)
+            .await
+            .map(|x| x.unwrap_or_else(|| MockAm {}.into())),
+        _ => Ok(MockAm {}.into()),
+    }
 }

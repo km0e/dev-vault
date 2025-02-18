@@ -48,7 +48,7 @@ impl UserComplete for SSHDeviceConfig {
         for user in self.users {
             if filter.contains(&user.uid) {
                 let mut user_cfg = SSHConfig::new(self.hid.clone(), user.host);
-                user_cfg.os = self.os.clone();
+                user_cfg.os = self.os.as_deref().map(|os| os.into()).unwrap_or_default();
                 user_cfg.passwd = user.passwd;
                 vec.push((user.uid, user_cfg.cast().await.expect("cast user")));
             }
@@ -57,7 +57,7 @@ impl UserComplete for SSHDeviceConfig {
             Some(system) if filter.contains(&system.uid) => {
                 let mut system_cfg = SSHConfig::new(self.hid.clone(), system.host);
                 system_cfg.is_system = true;
-                system_cfg.os = self.os.clone();
+                system_cfg.os = self.os.as_deref().map(|os| os.into()).unwrap_or_default();
                 system_cfg.passwd = system.passwd;
                 Some((system.uid, system_cfg.cast().await.expect("cast system")))
             }

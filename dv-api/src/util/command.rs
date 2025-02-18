@@ -1,4 +1,4 @@
-use super::dev::*;
+use super::{dev::*, Os};
 mod dev {
     pub use super::super::dev::*;
     pub use super::{BoxedCommandUtil, CommandUtil};
@@ -43,7 +43,9 @@ pub(crate) use into_boxed_command_util;
 
 impl<U: UserImpl + Send + Sync> From<&Params> for BoxedCommandUtil<U> {
     fn from(value: &Params) -> Self {
-        #[cfg(target_os = "linux")]
-        linux::try_match(&value.os).unwrap_or_else(|| MockCommandUtil {}.into())
+        match &value.os {
+            Os::Linux(os) => linux::try_match(os).unwrap_or_else(|| MockCommandUtil {}.into()),
+            _ => MockCommandUtil {}.into(),
+        }
     }
 }

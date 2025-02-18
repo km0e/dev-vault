@@ -31,23 +31,13 @@ pub(crate) struct SSHSession {
 }
 
 impl SSHSession {
-    // async fn metadata(
-    //     &self,
-    //     path: &str,
-    // ) -> std::result::Result<
-    //     (String, russh_sftp::protocol::FileAttributes),
-    //     russh_sftp::client::error::Error,
-    // > {
-    //     let path = self.sftp.canonicalize(path).await?;
-    //     let metadata = self.sftp.metadata(&path).await?;
-    //     Ok((path, metadata))
-    // }
-
     #[cfg(feature = "path-home")]
-    fn expand_home<'a>(&self, path: &'a str) -> std::borrow::Cow<'a, camino::Utf8Path> {
+    fn expand_home<'a, 'b: 'a>(&'b self, path: &'a str) -> std::borrow::Cow<'a, camino::Utf8Path> {
         if let Some(home) = &self.home {
             if let Some(path) = path.strip_prefix('~') {
                 return home.join(path).into();
+            } else if path == "~" {
+                return camino::Utf8Path::new(home).into();
             }
         }
         camino::Utf8Path::new(path).into()

@@ -7,6 +7,7 @@ pub mod process;
 mod params;
 pub mod user;
 mod util;
+pub use util::*;
 
 mod wrap;
 pub use error::Error;

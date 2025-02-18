@@ -1,13 +1,12 @@
 use crate::wrap::UserCast;
 
 use super::dev::*;
-use std::{
-    env,
-    path::{Path, PathBuf},
-};
-
 use process::PtyProcess;
 use snafu::ResultExt;
+#[cfg(feature = "path-home")]
+use std::path::PathBuf;
+
+use std::{env, path::Path};
 use systemd::Systemd;
 use tracing::{trace, warn};
 
@@ -39,14 +38,14 @@ fn detect() -> Params {
     p.os = if cfg!(target_os = "linux") {
         etc_os_release::OsRelease::open()
             .inspect_err(|e| warn!("can't open [/etc/os-release | /usr/lib/os-release]: {}", e))
-            .map(|os_release| os_release.id().to_string())
-            .unwrap_or("linux".to_string())
+            .map(|os_release| os_release.id().into())
+            .unwrap_or("linux".into())
     } else if cfg!(target_os = "macos") {
-        "macos".to_string()
+        "macos".into()
     } else if cfg!(target_os = "windows") {
-        "windows".to_string()
+        "windows".into()
     } else {
-        "unspecified".to_string()
+        "unknown".into()
     };
     if let Some(session) = {
         #[cfg(target_os = "linux")]
@@ -62,7 +61,7 @@ fn detect() -> Params {
             None
         }
     } {
-        p = p.session(session);
+        p.session(session);
     }
     p
 }
@@ -70,7 +69,8 @@ fn detect() -> Params {
 impl UserCast for LocalConfig {
     async fn cast(self) -> crate::Result<User> {
         let is_system = rustix::process::getuid().is_root();
-        let p = detect().mount(self.mount);
+        let mut p = detect();
+        p.mount(self.mount);
         let dev = This::new(is_system).await?;
         User::new(self.hid, p, is_system, dev).await
     }
@@ -108,26 +108,28 @@ impl This {
 impl UserImpl for This {
     async fn file_attributes(&self, path: &str) -> Result<FileAttributes> {
         #[cfg(feature = "path-home")]
-        let path = self.expand_home(path);
+        let path2 = self.expand_home(path);
+        #[cfg(not(feature = "path-home"))]
+        let path2 = Path::new(path);
 
-        std::fs::metadata(&path)
+        std::fs::metadata(&path2)
             .map(|meta| (&meta).into())
             .with_context(|_| error::IoSnafu {
-                about: format!("Cannot get metadata of {}", path.display()),
+                about: format!("Cannot get metadata of {}", path),
             })
     }
     async fn glob_file_meta(&self, path: &str) -> Result<Vec<Metadata>> {
         #[cfg(feature = "path-home")]
-        let path = self.expand_home(path);
+        let path2 = self.expand_home(path);
+        #[cfg(not(feature = "path-home"))]
+        let path2 = Path::new(path);
 
-        let metadata = <&Path>::from(&path)
-            .metadata()
-            .with_context(|_| error::IoSnafu {
-                about: format!("Cannot get metadata of {}", path.display()),
-            })?;
+        let metadata = path2.metadata().with_context(|_| error::IoSnafu {
+            about: format!("Cannot get metadata of {}", path),
+        })?;
         if metadata.is_dir() {
             let mut result = Vec::new();
-            for entry in walkdir::WalkDir::new(&path)
+            for entry in walkdir::WalkDir::new(&path2)
                 .into_iter()
                 .filter_map(|e| e.ok())
             {
@@ -146,7 +148,7 @@ impl UserImpl for This {
                     continue;
                 };
                 let modified = modified.as_secs();
-                let Ok(rel_path) = file_path.strip_prefix(&path) else {
+                let Ok(rel_path) = file_path.strip_prefix(&path2) else {
                     continue;
                 };
                 result.push(Metadata {
@@ -157,7 +159,7 @@ impl UserImpl for This {
             Ok(result)
         } else {
             Err(error::Error::Whatever {
-                message: format!("{} is not a directory", path.display()),
+                message: format!("{} is not a directory", path),
             })
         }
     }
@@ -208,14 +210,14 @@ impl UserImpl for This {
     }
     async fn open(&self, path: &str, opt: OpenFlags) -> Result<BoxedFile> {
         #[cfg(feature = "path-home")]
-        let path = self.expand_home(path);
+        let path2 = self.expand_home(path);
+        #[cfg(not(feature = "path-home"))]
+        let path2 = Path::new(path);
 
         let file = tokio::fs::OpenOptions::from(opt)
-            .open(&path)
+            .open(&path2)
             .await
-            .with_context(|_| error::IoSnafu {
-                about: path.to_string_lossy().to_string(),
-            })?;
+            .with_context(|_| error::IoSnafu { about: path })?;
         Ok(Box::new(file))
     }
 }

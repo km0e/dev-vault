@@ -5,7 +5,7 @@ use snafu::{whatever, ResultExt};
 use tokio::io::AsyncReadExt;
 use tracing::{info, warn};
 
-use crate::error;
+use crate::{error, util::Os};
 
 use super::{dev::*, Client, SSHSession};
 
@@ -14,7 +14,7 @@ pub struct SSHConfig {
     pub hid: String,
     pub host: String,
     pub is_system: bool,
-    pub os: Option<String>,
+    pub os: Os,
     pub passwd: Option<String>,
 }
 
@@ -23,9 +23,7 @@ impl SSHConfig {
         Self {
             hid: hid.into(),
             host: host.into(),
-            is_system: false,
-            os: None,
-            passwd: None,
+            ..Default::default()
         }
     }
 }
@@ -33,7 +31,14 @@ impl SSHConfig {
 impl UserCast for SSHConfig {
     async fn cast(self) -> crate::Result<User> {
         let (h, user) = connect(self.host, self.passwd).await?;
-        let (home, mut p) = detect(&h, user).await?;
+        let mut p = Params::new(user);
+        if !self.os.is_unknown() {
+            p.os(self.os);
+        }
+        #[cfg(feature = "path-home")]
+        let home = detect2(&h, &mut p).await?;
+        #[cfg(not(feature = "path-home"))]
+        detect2(&h, &mut p).await?;
         let channel = h.channel_open_session().await?;
         channel.request_subsystem(true, "sftp").await?;
 
@@ -42,9 +47,7 @@ impl UserCast for SSHConfig {
             .with_context(|_| error::SFTPSnafu {
                 about: "crate sftp session",
             })?;
-        if let Some(os) = self.os {
-            p = p.os(os);
-        }
+
         let command_util = (&p).into();
         let sys = SSHSession {
             session: h,
@@ -113,20 +116,30 @@ async fn connect(host: String, passwd: Option<String>) -> crate::Result<(Handle<
     );
 }
 
-async fn detect(
-    h: &Handle<Client>,
-    user: String,
-) -> crate::Result<(Option<camino::Utf8PathBuf>, Params)> {
-    let mut channel = h.channel_open_session().await?;
-    channel.exec(true, "env").await?;
-    let mut output = String::with_capacity(1024);
-    channel
-        .make_reader()
-        .read_to_string(&mut output)
-        .await
-        .with_context(|_| error::IoSnafu { about: "read env" })?;
-    let mut p = Params::new(user);
-    fn extract<const S: usize>(output: &str, keys: &[&str; S]) -> [Option<String>; S] {
+#[cfg(feature = "path-home")]
+type DetectResult = Result<Option<camino::Utf8PathBuf>>;
+
+#[cfg(not(feature = "path-home"))]
+type DetectResult = Result<()>;
+
+async fn detect2(h: &Handle<Client>, p: &mut Params) -> DetectResult {
+    if p.os.is_linux() {
+        detect(h, p).await
+    } else {
+        whatever!("{} not supported", p.os)
+    }
+}
+async fn detect(h: &Handle<Client>, p: &mut Params) -> DetectResult {
+    async fn extract<const S: usize>(
+        h: &Handle<Client>,
+        cmd: &str,
+        keys: &[&str; S],
+    ) -> std::result::Result<[Option<String>; S], russh::Error> {
+        let mut channel = h.channel_open_session().await?;
+        channel.exec(true, cmd).await?;
+        let mut output = String::with_capacity(1024);
+        channel.make_reader().read_to_string(&mut output).await?;
+
         let mut values = [const { None }; S];
         for line in output.split('\n') {
             let mut kv = line.splitn(2, '=');
@@ -140,39 +153,31 @@ async fn detect(
                 values[i] = Some(value.to_string());
             }
         }
-        values
+        Ok(values)
     }
 
     #[cfg(feature = "path-home")]
-    let [home, session] = extract(&output, &["HOME", "XDG_SESSION_TYPE"]);
+    let [home, session] = extract(h, "env", &["HOME", "XDG_SESSION_TYPE"]).await?;
 
     #[cfg(not(feature = "path-home"))]
-    let [session] = extract(&output, &["XDG_SESSION_TYPE"]);
-    #[cfg(not(feature = "path-home"))]
-    let home = None;
+    let [session] = extract(h, "env", &["XDG_SESSION_TYPE"]).await?;
 
     if let Some(session) = session {
         info!("session: {}", session);
-        p = p.session(session);
+        p.session(session);
     }
-    channel = h.channel_open_session().await?;
-    channel
-        .exec(
-            true,
-            "sh -c 'cat /etc/os-release 2>/dev/null || cat /usr/lib/os-release 2>/dev/null'",
-        )
-        .await?;
-    channel
-        .make_reader()
-        .read_to_string(&mut output)
-        .await
-        .with_context(|_| error::IoSnafu {
-            about: "read /etc/os-release",
-        })?;
-    let [os] = extract(&output, &["ID"]);
+    let [os] = extract(
+        h,
+        "sh -c 'cat /etc/os-release 2>/dev/null || cat /usr/lib/os-release 2>/dev/null'",
+        &["ID"],
+    )
+    .await?;
     if let Some(os) = os {
-        info!("os: {}", os);
-        p = p.os(os);
+        p.os(os.as_str());
     }
-    Ok((home.map(|h| h.into()), p))
+    #[cfg(feature = "path-home")]
+    let res = Ok(home.map(|h| h.into()));
+    #[cfg(not(feature = "path-home"))]
+    let res = Ok(());
+    res
 }

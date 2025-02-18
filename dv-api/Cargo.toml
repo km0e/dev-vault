@@ -23,8 +23,10 @@ rustix-openpty = "0.1.1"
 walkdir = "2.5.0"
 zbus = "5.5.0"
 camino = "1.1.9"
+strum_macros = "0.27.1"
 
 
 [features]
-default = ["path-home"]
+default = []
 path-home = ["dep:home"]
+full = ["path-home"]

@@ -9,7 +9,7 @@ use rune::{
     runtime::{self, Mut, Ref},
     Any,
 };
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::{cache::SqliteCache, interactor::TermInteractor};
 
@@ -162,7 +162,15 @@ impl Dv {
         mut user: Mut<runtime::Object>,
     ) -> Option<()> {
         use dv_api::SSHConfig;
-        let user = obj2!(SSHConfig, &this.interactor, user, hid, host, is_system@bool, @default);
+        let os = assert_result!(
+            user.remove("os").map(|v| value2!(v)).transpose(),
+            &this.interactor
+        )
+        .map(|v| v.as_str().into());
+        let mut user =
+            obj2!(SSHConfig, &this.interactor, user, hid, host, is_system@bool, @default);
+        user.os = os.unwrap_or_default();
+        info!("ssh user: {:?}", user);
         let u = user.cast().await.unwrap();
         let is_system = u.is_system;
         if this.users.insert(id.to_owned(), u).is_some() {
@@ -220,14 +228,12 @@ impl Dv {
                 let main = if src.is_system { src } else { dst };
                 assert_result!(main.copy(src_path, dst_path).await, &self.interactor);
             }
-            true
-        };
-        if res {
             assert_result!(
                 self.cache.set(dst_uid, dst_path, ts).await,
                 &self.interactor
             );
-        }
+            true
+        };
         self.interactor
             .log(&format!(
                 "[{}] {} copy {}:{} -> {}:{}",

@@ -1,3 +1,5 @@
+use crate::util::dev_info::LinuxOs;
+
 use super::{
     dev::{self, *},
     into_boxed_command_util,
@@ -12,11 +14,11 @@ pub use manjaro::Manjaro;
 mod support;
 use support::*;
 
-pub fn try_match<U: UserImpl + Send + Sync>(os: &str) -> Option<BoxedCommandUtil<U>> {
+pub fn try_match<U: UserImpl + Send + Sync>(os: &LinuxOs) -> Option<BoxedCommandUtil<U>> {
     match os {
-        "manjaro" => Some(Manjaro::default().into()),
-        "debian" => Some(Debian::default().into()),
-        "alpine" => Some(Alpine::default().into()),
+        LinuxOs::Manjaro => Some(Manjaro::default().into()),
+        LinuxOs::Debian => Some(Debian::default().into()),
+        LinuxOs::Alpine => Some(Alpine::default().into()),
         _ => Some(Linux::default().into()),
     }
 }
