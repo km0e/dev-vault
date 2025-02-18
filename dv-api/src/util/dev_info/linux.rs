@@ -6,13 +6,15 @@ pub enum Linux {
     Debian,
 }
 
-impl From<&str> for Linux {
-    fn from(value: &str) -> Self {
-        match value {
+impl TryFrom<&str> for Linux {
+    type Error = ();
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(match value {
+            "linux" => Linux::Unknown,
             "manjaro" => Linux::Manjaro,
             "alpine" => Linux::Alpine,
             "debian" => Linux::Debian,
-            _ => Linux::Unknown,
-        }
+            _ => return Err(()),
+        })
     }
 }

@@ -9,7 +9,7 @@ use rune::{
     runtime::{self, Mut, Ref},
     Any,
 };
-use tracing::{debug, info};
+use tracing::{debug, info, trace};
 
 use crate::{cache::SqliteCache, interactor::TermInteractor};
 
@@ -96,34 +96,53 @@ macro_rules! value2 {
     };
 }
 
-macro_rules! obj_take {
-    ($t:ty, $o:expr, $k:expr) => {
+macro_rules! obj_take2 {
+    // or default
+    ($o:ident@($k:expr, $v:expr, $t:ty)) => {
+        $o.remove($k)
+            .map(|v| value2!($t, v))
+            .transpose()
+            .map(|v| v.unwrap_or($v.into()))
+    };
+    ($o:ident@($k:expr,, $t:ty)) => {
+        obj_take2!($o@($k, <$t>::default(), $t))
+    };
+    ($o:ident@($k:expr, $v:expr,)) => {
+        obj_take2!($o@($k, $v, String))
+    };
+    ($o:ident@($k:expr,,)) => {
+        obj_take2!($o@($k, "", String))
+    };
+    // must have
+    ($o:ident@($k:expr, $t:ty)) => {
         $o.remove($k)
             .ok_or_else(|| format!("{} not found", $k))
             .and_then(|v| value2!($t, v))
     };
-    ($o:expr, $k:expr) => {
-        $o.remove($k)
-            .ok_or_else(|| format!("{} not found", $k))
-            .and_then(|v| value2!(v))
+    ($o:ident@$k:expr) => {
+        obj_take2!($o@($k, String))
     };
 }
 
 macro_rules! field {
-    ($interactor:expr, $o:expr, $k:ident@) => {
-        assert_result!(obj_take!($o, stringify!($k)), $interactor)
+    ($interactor:expr, $o:ident, $k:ident@) => {
+        assert_result!(obj_take2!($o@stringify!($k)), $interactor)
     };
-    ($interactor:expr, $o:expr, $k:ident@$t:ty) => {
-        assert_result!(obj_take!($t, $o, stringify!($k)), $interactor)
+    ($interactor:expr, $o:ident, $k:ident@($v:expr, $t:ty)) => {
+        assert_result!(obj_take2!($o@(stringify!($k), $v, $t)), $interactor)
     };
-    ($interactor:expr, $o:expr, $k:ident@$v:expr) => {
-        $v,
+    ($interactor:expr, $o:ident, $k:ident@(, $t:ty)) => {
+        assert_result!(obj_take2!($o@(stringify!($k),, $t)), $interactor)
     };
-    ($interactor:expr, $o:expr, _@default) => {
+    ($interactor:expr, $o:ident, $k:ident@($v:expr)) => {
+        assert_result!(obj_take2!($o@(stringify!($k), $v,)), $interactor)
+    };
+    ($interactor:expr, $o:ident, $k:ident@()) => {
+        assert_result!(obj_take2!($o@(stringify!($k),,)), $interactor)
     };
 }
 macro_rules! obj2 {
-    ($st:ident, $interactor:expr, $o:expr, $($k:ident$(@$t:tt)?),+ $(, @$d:ident)?) => {
+    ($st:ident, $interactor:expr, $o:ident, $($k:ident$(@$t:tt)?),+ $(, @$d:ident)?) => {
         $st {
             $(
                 $k: field!($interactor, $o, $k@$($t)?).into(),
@@ -143,7 +162,8 @@ impl Dv {
         mut user: Mut<runtime::Object>,
     ) -> Option<()> {
         use dv_api::LocalConfig;
-        let user = obj2!(LocalConfig, &this.interactor, user, hid, mount);
+        let user =
+            obj2!(LocalConfig, &this.interactor, user, hid@("local"), mount@("~/.config/dv"));
         let u = user.cast().await.unwrap();
         if this.users.insert(id.to_owned(), u).is_some() {
             panic!("user already exists");
@@ -162,14 +182,8 @@ impl Dv {
         mut user: Mut<runtime::Object>,
     ) -> Option<()> {
         use dv_api::SSHConfig;
-        let os = assert_result!(
-            user.remove("os").map(|v| value2!(v)).transpose(),
-            &this.interactor
-        )
-        .map(|v| v.as_str().into());
-        let mut user =
-            obj2!(SSHConfig, &this.interactor, user, hid, host, is_system@bool, @default);
-        user.os = os.unwrap_or_default();
+        let id = id.as_ref();
+        let user = obj2!(SSHConfig, &this.interactor, user, hid@(id), host@(id), is_system@(,bool),os@("linux"), @default);
         info!("ssh user: {:?}", user);
         let u = user.cast().await.unwrap();
         let is_system = u.is_system;
@@ -182,9 +196,7 @@ impl Dv {
             (true, None) => d.system = Some(id.to_owned()),
             (false, _) => d.users.push(id.to_owned()),
         }
-        this.interactor
-            .log(&format!("add ssh user: {}", id.as_ref()))
-            .await;
+        this.interactor.log(&format!("add ssh user: {}", id)).await;
         Some(())
     }
     async fn get_user(&self, uid: impl AsRef<str>) -> Option<&User> {
@@ -293,6 +305,7 @@ impl Dv {
         let dst_uid = dst_uid.as_ref();
         let src_path = src_path.as_ref();
         let mut dst_path = dst_path.to_string();
+        trace!("copy {}:{} -> {}:{}", src_uid, src_path, dst_uid, dst_path);
         let src = this.get_user(src_uid).await?;
         if src_path.ends_with('/') {
             let DirInfo { path, files } =

@@ -12,15 +12,19 @@ pub enum Os {
 
 impl From<&str> for Os {
     fn from(value: &str) -> Self {
-        let os = LinuxOs::from(value);
-
-        match os {
-            LinuxOs::Unknown => match value {
-                "windows" => Os::Windows,
-                "macos" => Os::Mac,
-                _ => Os::Unknown,
-            },
-            _ => Os::Linux(os),
+        let os = LinuxOs::try_from(value);
+        if let Ok(os) = os {
+            return Os::Linux(os);
         }
+        match value {
+            "windows" => Os::Windows,
+            "macos" => Os::Mac,
+            _ => Os::Unknown,
+        }
+    }
+}
+impl From<String> for Os {
+    fn from(value: String) -> Self {
+        Os::from(value.as_str())
     }
 }
