@@ -2,11 +2,13 @@ mod arg;
 mod cache;
 mod dvl;
 mod interactor;
+
 use clap::Parser;
-use rune::termcolor::{ColorChoice, StandardStream};
-use rune::{ContextError, Diagnostics, Module, Vm};
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
+use rune::{
+    termcolor::{ColorChoice, StandardStream},
+    to_value, ContextError, Diagnostics, Module, Vm,
+};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use std::sync::Arc;
 
@@ -47,10 +49,22 @@ async fn main() -> rune::support::Result<()> {
     let unit = result?;
 
     let mut vm = Vm::new(runtime, Arc::new(unit));
+
+    let rargs = args
+        .rargs
+        .into_iter()
+        .map(to_value)
+        .collect::<Result<Vec<_>, _>>()?;
+
     let output = vm
         .execute(
-            ["main"],
-            (dvl::Dv::new(args.directory.join(".cache"), args.dry_run),),
+            [args.entry.as_str()],
+            std::iter::once(rune::to_value(dvl::Dv::new(
+                args.directory.join(".cache"),
+                args.dry_run,
+            ))?)
+            .chain(rargs)
+            .collect::<Vec<_>>(),
         )?
         .async_complete()
         .await

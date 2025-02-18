@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use std::path::PathBuf;
 
 fn default_config() -> PathBuf {
@@ -10,24 +10,14 @@ fn default_config() -> PathBuf {
 #[derive(Parser, Debug)]
 #[command(version = env!("CARGO_PKG_VERSION"), about = "Simple CLI to show how to use xcfg")]
 pub struct Cli {
-    // #[command(subcommand)]
-    // pub command: Which,
     #[arg(short, long, default_value_os_t = default_config())]
     pub directory: PathBuf,
     #[arg(short, long)]
     pub config: Option<PathBuf>,
     #[arg(short = 'n', long, default_value = "false")]
     pub dry_run: bool,
-}
-
-#[derive(Subcommand, Debug)]
-pub enum Which {
-    // #[command(visible_alias = "fc", about = "Print full config")]
-    // FullConfig { extension: Option<String> },
-    #[command(visible_alias = "e", about = "Execute plan")]
-    Exec {
-        #[arg(short = 'n', long, default_value = "false")]
-        dry_run: bool,
-        // plan_id: Option<String>,
-    },
+    #[arg(default_value = "main")]
+    pub entry: String,
+    #[arg(trailing_var_arg = true)]
+    pub rargs: Vec<String>,
 }
