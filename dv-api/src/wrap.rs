@@ -21,10 +21,10 @@ pub trait UserCast {
 #[derive(Debug)]
 
 pub struct User {
-    params: Params,
+    pub params: Params,
     pub hid: String,
     pub is_system: bool,
-    pub inner: BoxedUser,
+    inner: BoxedUser,
     am: BoxedAm,
 }
 
@@ -151,8 +151,8 @@ impl User {
     pub async fn app(&self, interactor: &DynInteractor, packages: &str) -> crate::Result<bool> {
         self.am.install(self, interactor, packages).await
     }
-    pub async fn exec(&self, command: Script<'_, '_>) -> Result<BoxedPtyProcess> {
-        self.inner.exec(command).await
+    pub async fn exec(&self, s: Script<'_, '_>) -> Result<BoxedPtyProcess> {
+        self.inner.exec(s).await
     }
     pub async fn open(&self, path: &str, opt: OpenFlags) -> crate::Result<BoxedFile> {
         self.inner.open(self.normalize2(path)?.as_str(), opt).await

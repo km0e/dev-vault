@@ -173,7 +173,7 @@ async fn detect(h: &Handle<Client>, p: &mut Params) -> DetectResult {
     )
     .await?;
     if let Some(os) = os {
-        p.os(os.as_str());
+        p.os(os);
     }
     #[cfg(feature = "path-home")]
     let res = Ok(home.map(|h| h.into()));

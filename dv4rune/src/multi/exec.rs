@@ -1,9 +1,6 @@
 use dv_api::process::{Interactor, Script};
 
-use crate::{
-    dvl::Context,
-    utils::{assert_bool, assert_option, assert_result},
-};
+use super::Context;
 
 pub async fn exec(
     ctx: &Context<'_>,
@@ -19,17 +16,15 @@ pub async fn exec(
             input: Box::new([commands].into_iter()),
         })
         .unwrap_or_else(|| Script::Whole(commands));
-    let user = assert_option!(ctx.users.get(uid), ctx.interactor, || format!(
-        "user {} not found",
-        uid
-    ));
+    let user = ctx.try_get_user(uid).await?;
     if ctx.dry_run {
         ctx.interactor.log(&format!("[n] exec {}", commands)).await;
         return Some(true);
     }
-    let mut pp = assert_result!(user.exec(script).await, ctx.interactor);
+    let mut pp = ctx.async_assert_result(user.exec(script)).await?;
 
-    let ec = assert_result!(ctx.interactor.ask(&mut pp).await, ctx.interactor);
-    assert_bool!(ec == 0, ctx.interactor, || "exec failed");
+    let ec = ctx.async_assert_result(ctx.interactor.ask(&mut pp)).await?;
+    ctx.assert_bool(ec == 0, || format!("unexpect exit code: {}", ec))
+        .await?;
     Some(true)
 }

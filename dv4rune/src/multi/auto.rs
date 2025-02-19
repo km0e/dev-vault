@@ -1,9 +1,6 @@
 use dv_api::process::Interactor;
 
-use crate::{
-    dvl::Context,
-    utils::{assert_option, assert_result},
-};
+use super::Context;
 
 pub async fn auto(
     ctx: &Context<'_>,
@@ -14,16 +11,13 @@ pub async fn auto(
     let uid = uid.as_ref();
     let service = service.as_ref();
     let action = action.as_ref();
-    let user = assert_option!(ctx.users.get(uid), ctx.interactor, || format!(
-        "user {} not found",
-        uid
-    ));
+    let user = ctx.try_get_user(uid).await?;
     if ctx.dry_run {
         ctx.interactor
             .log(&format!("[n] auto {} {}", service, action))
             .await;
         return Some(true);
     }
-    assert_result!(user.auto(service, action).await, ctx.interactor);
+    ctx.async_assert_result(user.auto(service, action)).await?;
     Some(true)
 }

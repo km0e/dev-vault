@@ -1,6 +1,6 @@
 mod arg;
 mod cache;
-mod dvl;
+mod dv;
 mod interactor;
 mod multi;
 mod utils;
@@ -8,7 +8,7 @@ mod utils;
 use clap::Parser;
 use rune::{
     termcolor::{ColorChoice, StandardStream},
-    to_value, ContextError, Diagnostics, Module, Vm,
+    to_value, Diagnostics, Vm,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -24,7 +24,7 @@ async fn main() -> rune::support::Result<()> {
 
     let args = arg::Cli::parse();
 
-    let m = module()?;
+    let m = dv::module()?;
 
     let mut context = rune_modules::default_context()?;
     context.install(m)?;
@@ -61,7 +61,7 @@ async fn main() -> rune::support::Result<()> {
     let output = vm
         .execute(
             [args.entry.as_str()],
-            std::iter::once(rune::to_value(dvl::Dv::new(
+            std::iter::once(rune::to_value(dv::Dv::new(
                 args.directory.join(".cache"),
                 args.dry_run,
             ))?)
@@ -74,16 +74,4 @@ async fn main() -> rune::support::Result<()> {
     let _: () = rune::from_value(output)?;
 
     Ok(())
-}
-
-fn module() -> Result<Module, ContextError> {
-    let mut m = Module::default();
-    m.ty::<dvl::Dv>()?;
-    m.function_meta(dvl::Dv::add_current)?;
-    m.function_meta(dvl::Dv::add_ssh_user)?;
-    m.function_meta(dvl::Dv::copy)?;
-    m.function_meta(dvl::Dv::app)?;
-    m.function_meta(dvl::Dv::auto)?;
-    m.function_meta(dvl::Dv::exec)?;
-    Ok(m)
 }

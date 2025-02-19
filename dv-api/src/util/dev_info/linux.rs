@@ -1,20 +1,15 @@
-#[derive(Debug, Clone)]
-pub enum Linux {
-    Unknown,
-    Manjaro,
-    Alpine,
-    Debian,
-}
+use strum::{AsRefStr, Display, EnumString};
 
-impl TryFrom<&str> for Linux {
-    type Error = ();
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Ok(match value {
-            "linux" => Linux::Unknown,
-            "manjaro" => Linux::Manjaro,
-            "alpine" => Linux::Alpine,
-            "debian" => Linux::Debian,
-            _ => return Err(()),
-        })
-    }
+#[derive(Default, Debug, Clone, AsRefStr, Display, EnumString, PartialEq)]
+#[strum(serialize_all = "snake_case")]
+pub enum Linux {
+    #[default]
+    #[strum(serialize = "linux")]
+    Unknown,
+    #[strum(serialize = "manjaro")]
+    Manjaro,
+    #[strum(serialize = "alpine")]
+    Alpine,
+    #[strum(serialize = "debian")]
+    Debian,
 }

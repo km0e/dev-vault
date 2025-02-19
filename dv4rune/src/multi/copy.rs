@@ -5,10 +5,7 @@ use dv_api::{
 };
 use tracing::{debug, trace};
 
-use crate::{
-    dvl::Context,
-    utils::{assert_bool, assert_option, assert_result},
-};
+use super::Context;
 
 async fn check_copy_file(
     ctx: &Context<'_>,
@@ -19,8 +16,10 @@ async fn check_copy_file(
     dst_path: &str,
     ts: u64,
 ) -> Option<bool> {
-    let dst = ctx.get_user(dst_uid).await?;
-    let cache = assert_result!(ctx.cache.get(dst_uid, dst_path).await, ctx.interactor);
+    let dst = ctx.try_get_user(dst_uid).await?;
+    let cache = ctx
+        .async_assert_result(ctx.cache.get(dst_uid, dst_path))
+        .await?;
     let res = if cache.is_some_and(|dst_ts| {
         if dst_ts != ts {
             debug!("{} != {}", dst_ts, ts);
@@ -32,18 +31,20 @@ async fn check_copy_file(
         true
     } else {
         if src.hid != dst.hid {
-            let mut src = assert_result!(src.open(src_path, OpenFlags::READ).await, ctx.interactor);
-            let mut dst = assert_result!(
-                dst.open(dst_path, OpenFlags::WRITE | OpenFlags::CREATE)
-                    .await,
-                ctx.interactor
-            );
-            assert_result!(tokio::io::copy(&mut src, &mut dst).await, ctx.interactor);
+            let mut src = ctx
+                .async_assert_result(src.open(src_path, OpenFlags::READ))
+                .await?;
+            let mut dst = ctx
+                .async_assert_result(dst.open(dst_path, OpenFlags::WRITE | OpenFlags::CREATE))
+                .await?;
+            ctx.async_assert_result(tokio::io::copy(&mut src, &mut dst))
+                .await;
         } else {
             let main = if src.is_system { src } else { dst };
-            assert_result!(main.copy(src_path, dst_path).await, ctx.interactor);
+            ctx.async_assert_result(main.copy(src_path, dst_path)).await;
         }
-        assert_result!(ctx.cache.set(dst_uid, dst_path, ts).await, ctx.interactor);
+        ctx.async_assert_result(ctx.cache.set(dst_uid, dst_path, ts))
+            .await;
         true
     };
     ctx.interactor
@@ -96,23 +97,21 @@ pub async fn copy(
     let dst_uid = dst_uid.as_ref();
     let src_path = src_path.as_ref();
     let dst_path = dst_path.into();
-    assert_bool!(!src_path.is_empty(), ctx.interactor, || {
-        "src_path is empty"
-    });
-    assert_bool!(!dst_path.is_empty(), ctx.interactor, || {
-        "dst_path is empty"
-    });
+    ctx.assert_bool(!src_path.is_empty(), || "src_path is empty")
+        .await?;
+    ctx.assert_bool(!dst_uid.is_empty(), || "dst_uid is empty")
+        .await?;
     let mut dst_path = dst_path.to_string();
     trace!("copy {}:{} -> {}:{}", src_uid, src_path, dst_uid, dst_path);
-    let src = ctx.get_user(src_uid).await?;
+    let src = ctx.try_get_user(src_uid).await?;
     if src_path.ends_with('/') {
-        let DirInfo { path, files } = assert_result!(src.check_dir(src_path).await, ctx.interactor);
+        let DirInfo { path, files } = ctx.async_assert_result(src.check_dir(src_path)).await?;
         if !dst_path.ends_with('/') {
             dst_path.push('/');
         }
         check_copy_dir(ctx, src, src_uid, path, dst_uid, dst_path, files).await
     } else {
-        let info = assert_result!(src.check_path(src_path).await, ctx.interactor);
+        let info = ctx.async_assert_result(src.check_path(src_path)).await?;
         if dst_path.ends_with('/') {
             dst_path.push_str(
                 src_path
@@ -127,12 +126,7 @@ pub async fn copy(
                 check_copy_dir(ctx, src, src_uid, dir.path, dst_uid, dst_path, dir.files).await
             }
             CheckInfo::File(file) => {
-                let Metadata { path, ts } = assert_option!(
-                    file.into(),
-                    ctx.interactor,
-                    || format!("src file {} not found", src_path)
-                );
-                check_copy_file(ctx, src, src_uid, &path, dst_uid, &dst_path, ts).await
+                check_copy_file(ctx, src, src_uid, &file.path, dst_uid, &dst_path, file.ts).await
             }
         }
     }

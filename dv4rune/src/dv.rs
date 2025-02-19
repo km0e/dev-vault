@@ -1,8 +1,8 @@
 use std::{collections::HashMap, path::Path};
 
-use dv_api::{process::Interactor, User, UserCast};
+use dv_api::{process::Interactor, Os, User, UserCast};
 use rune::{
-    runtime::{self, Mut, Ref},
+    runtime::{self, Mut, Object, Ref},
     Any,
 };
 use tracing::info;
@@ -10,7 +10,8 @@ use tracing::info;
 use crate::{
     cache::SqliteCache,
     interactor::TermInteractor,
-    utils::{assert_option, assert_result, field, obj2, obj_take2, value2},
+    multi::Context,
+    utils::{field, obj2, obj_take2, value2},
 };
 
 #[derive(Debug, Default)]
@@ -38,55 +39,39 @@ impl Dv {
             interactor: Default::default(),
         }
     }
-}
-
-pub struct Context<'a> {
-    pub dry_run: bool,
-    pub cache: &'a SqliteCache,
-    pub interactor: &'a TermInteractor,
-    pub users: &'a HashMap<String, User>,
-}
-
-impl Context<'_> {
-    pub async fn get_user(&self, uid: impl AsRef<str>) -> Option<&User> {
-        Some(assert_option!(
-            self.users.get(uid.as_ref()),
-            &self.interactor,
-            || format!("user {} not found", uid.as_ref())
-        ))
+    fn context(&self) -> Context<'_> {
+        Context::new(self.dry_run, &self.cache, &self.interactor, &self.users)
     }
 }
-
 impl Dv {
     #[rune::function(path = Self::add_local)]
-    async fn add_current(
-        mut this: Mut<Self>,
-        id: Ref<str>,
-        mut user: Mut<runtime::Object>,
-    ) -> Option<()> {
+    async fn add_current(mut this: Mut<Self>, id: Ref<str>, mut user: Mut<Object>) -> Option<()> {
+        let id = id.as_ref();
         use dv_api::LocalConfig;
         let user =
-            obj2!(LocalConfig, &this.interactor, user, hid@("local"), mount@("~/.config/dv"));
+            obj2!(LocalConfig, &this.context(), user, hid@("local",), mount@("~/.config/dv",));
         let u = user.cast().await.unwrap();
-        if this.users.insert(id.to_owned(), u).is_some() {
+        if this.users.insert(id.to_string(), u).is_some() {
             panic!("user already exists");
         }
-        let d = this.devices.entry(id.to_owned()).or_default();
-        d.users.push(id.to_owned());
+        let d = this.devices.entry(id.to_string()).or_default();
+        d.users.push(id.to_string());
+        let u = &this.users[id];
         this.interactor
-            .log(&format!("add local user: {}", id.as_ref()))
+            .log(&format!(
+                "local user: {:<10}, hid: {:<10}, os: {:<8}",
+                id,
+                u.hid,
+                u.params.os.as_ref()
+            ))
             .await;
         Some(())
     }
     #[rune::function(path = Self::add_ssh_user)]
-    async fn add_ssh_user(
-        mut this: Mut<Self>,
-        id: Ref<str>,
-        mut user: Mut<runtime::Object>,
-    ) -> Option<()> {
+    async fn add_ssh_user(mut this: Mut<Self>, id: Ref<str>, mut user: Mut<Object>) -> Option<()> {
         use dv_api::SSHConfig;
         let id = id.as_ref();
-        let user = obj2!(SSHConfig, &this.interactor, user, hid@(id), host@(id), is_system@(,bool),os@("linux"), @default);
+        let user = obj2!(SSHConfig, &this.context(), user, hid@(id,), host@(id,), is_system@(bool),os@("linux", Os::from), @default);
         info!("ssh user: {:?}", user);
         let u = user.cast().await.unwrap();
         let is_system = u.is_system;
@@ -99,16 +84,30 @@ impl Dv {
             (true, None) => d.system = Some(id.to_owned()),
             (false, _) => d.users.push(id.to_owned()),
         }
-        this.interactor.log(&format!("add ssh user: {}", id)).await;
+        let u = &this.users[id];
+        this.interactor
+            .log(&format!(
+                "ssh   user: {:<10}, hid: {:<10}, os: {:<8}",
+                id,
+                u.hid,
+                u.params.os.as_ref()
+            ))
+            .await;
         Some(())
     }
-    fn context(&self) -> Context<'_> {
-        Context {
-            dry_run: self.dry_run,
-            cache: &self.cache,
-            interactor: &self.interactor,
-            users: &self.users,
-        }
+    #[rune::function(path = Self::user_params)]
+    fn user_params(this: Ref<Self>, id: Ref<str>) -> rune::support::Result<Object> {
+        let user = this.context().get_user(id)?;
+        let mut obj = Object::new();
+        obj.insert(
+            rune::alloc::String::try_from("os")?,
+            rune::to_value(user.params.os.as_ref())?,
+        )?;
+        obj.insert(
+            rune::alloc::String::try_from("hid")?,
+            rune::to_value(user.hid.as_str())?,
+        )?;
+        Ok(obj)
     }
     #[rune::function(path = Self::copy)]
     async fn copy(
@@ -147,8 +146,7 @@ impl Dv {
                 acc.push_str(&value2!(n)?);
                 Ok(acc)
             });
-        let packages = assert_result!(res, ctx.interactor);
-        crate::multi::app(ctx, uid, packages).await
+        crate::multi::app(&ctx, uid, ctx.assert_result(res).await?).await
     }
     #[rune::function(path = Self::auto)]
     async fn auto(
@@ -159,4 +157,17 @@ impl Dv {
     ) -> Option<bool> {
         crate::multi::auto(&this.context(), uid, service, action).await
     }
+}
+
+pub fn module() -> Result<rune::Module, rune::ContextError> {
+    let mut m = rune::Module::default();
+    m.ty::<Dv>()?;
+    m.function_meta(Dv::add_current)?;
+    m.function_meta(Dv::add_ssh_user)?;
+    m.function_meta(Dv::user_params)?;
+    m.function_meta(Dv::copy)?;
+    m.function_meta(Dv::app)?;
+    m.function_meta(Dv::auto)?;
+    m.function_meta(Dv::exec)?;
+    Ok(m)
 }
