@@ -1,13 +1,15 @@
 use dv_api::process::{Interactor, Script};
 
-use super::Context;
+use crate::utils::LogFutResult;
+
+use super::{Context, LRes};
 
 pub async fn exec(
     ctx: &Context<'_>,
     uid: impl AsRef<str>,
     shell: Option<&str>,
     commands: impl AsRef<str>,
-) -> Option<bool> {
+) -> LRes<bool> {
     let uid = uid.as_ref();
     let commands = commands.as_ref();
     let script = shell
@@ -16,15 +18,18 @@ pub async fn exec(
             input: Box::new([commands].into_iter()),
         })
         .unwrap_or_else(|| Script::Whole(commands));
-    let user = ctx.try_get_user(uid).await?;
+    let user = ctx.get_user(uid).await?;
     if ctx.dry_run {
         ctx.interactor.log(&format!("[n] exec {}", commands)).await;
-        return Some(true);
+        return Ok(true);
     }
-    let mut pp = ctx.async_assert_result(user.exec(script)).await?;
+    let mut pp = user.exec(script).log(ctx.interactor).await?;
 
-    let ec = ctx.async_assert_result(ctx.interactor.ask(&mut pp)).await?;
-    ctx.assert_bool(ec == 0, || format!("unexpect exit code: {}", ec))
-        .await?;
-    Some(true)
+    let ec = ctx.interactor.ask(&mut pp).log(ctx.interactor).await?;
+    if ec != 0 {
+        ctx.interactor
+            .log(&format!("unexpect exit code: {}", ec))
+            .await;
+    }
+    Ok(true)
 }

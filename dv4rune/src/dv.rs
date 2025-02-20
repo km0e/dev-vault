@@ -1,9 +1,9 @@
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, future::IntoFuture, path::Path};
 
 use dv_api::{process::Interactor, Os, User, UserCast};
 use rune::{
-    runtime::{self, Mut, Object, Ref},
-    Any,
+    runtime::{self, Mut, Object, Ref, VmError},
+    support, Any,
 };
 use tracing::info;
 
@@ -11,8 +11,9 @@ use crate::{
     cache::SqliteCache,
     interactor::TermInteractor,
     multi::Context,
-    utils::{field, obj2, obj_take2, value2},
+    utils::{field, obj2, obj_take2, value2, LogResult},
 };
+use support::Result as LRes;
 
 #[derive(Debug, Default)]
 struct Device {
@@ -45,7 +46,7 @@ impl Dv {
 }
 impl Dv {
     #[rune::function(path = Self::add_local)]
-    async fn add_current(mut this: Mut<Self>, id: Ref<str>, mut user: Mut<Object>) -> Option<()> {
+    async fn add_current(mut this: Mut<Self>, id: Ref<str>, mut user: Mut<Object>) -> LRes<()> {
         let id = id.as_ref();
         use dv_api::LocalConfig;
         let user =
@@ -65,10 +66,10 @@ impl Dv {
                 u.params.os.as_ref()
             ))
             .await;
-        Some(())
+        Ok(())
     }
     #[rune::function(path = Self::add_ssh_user)]
-    async fn add_ssh_user(mut this: Mut<Self>, id: Ref<str>, mut user: Mut<Object>) -> Option<()> {
+    async fn add_ssh_user(mut this: Mut<Self>, id: Ref<str>, mut user: Mut<Object>) -> LRes<()> {
         use dv_api::SSHConfig;
         let id = id.as_ref();
         let user = obj2!(SSHConfig, &this.context(), user, hid@(id,), host@(id,), is_system@(bool),os@("linux", Os::from), @default);
@@ -93,11 +94,11 @@ impl Dv {
                 u.params.os.as_ref()
             ))
             .await;
-        Some(())
+        Ok(())
     }
     #[rune::function(path = Self::user_params)]
-    fn user_params(this: Ref<Self>, id: Ref<str>) -> rune::support::Result<Object> {
-        let user = this.context().get_user(id)?;
+    async fn user_params(this: Ref<Self>, id: Ref<str>) -> LRes<Object> {
+        let user = this.context().get_user(id).await?;
         let mut obj = Object::new();
         obj.insert(
             rune::alloc::String::try_from("os")?,
@@ -116,7 +117,7 @@ impl Dv {
         src_path: Ref<str>,
         dst_uid: Ref<str>,
         dst_path: Ref<str>,
-    ) -> Option<bool> {
+    ) -> LRes<bool> {
         crate::multi::copy(
             &this.context(),
             src_uid,
@@ -132,13 +133,13 @@ impl Dv {
         uid: Ref<str>,
         shell: Option<Ref<str>>,
         commands: Ref<str>,
-    ) -> Option<bool> {
+    ) -> LRes<bool> {
         crate::multi::exec(&this.context(), uid, shell.as_deref(), commands).await
     }
     #[rune::function(path = Self::app)]
-    async fn app(this: Ref<Self>, uid: Ref<str>, package: runtime::Vec) -> Option<bool> {
+    async fn app(this: Ref<Self>, uid: Ref<str>, package: runtime::Vec) -> LRes<bool> {
         let ctx = this.context();
-        let res: Result<String, String> =
+        let res: Result<String, VmError> =
             package.into_iter().try_fold(String::new(), |mut acc, n| {
                 if !acc.is_empty() {
                     acc.push(' ');
@@ -146,7 +147,8 @@ impl Dv {
                 acc.push_str(&value2!(n)?);
                 Ok(acc)
             });
-        crate::multi::app(&ctx, uid, ctx.assert_result(res).await?).await
+
+        crate::multi::app(&ctx, uid, res.log(ctx.interactor).await?).await
     }
     #[rune::function(path = Self::auto)]
     async fn auto(
@@ -154,8 +156,30 @@ impl Dv {
         uid: Ref<str>,
         service: Ref<str>,
         action: Ref<str>,
-    ) -> Option<bool> {
+    ) -> LRes<bool> {
         crate::multi::auto(&this.context(), uid, service, action).await
+    }
+    #[rune::function(path = Self::once)]
+    async fn once(this: Ref<Self>, id: Ref<str>, f: runtime::Function) -> LRes<bool> {
+        let id = id.as_ref();
+        let b = this.cache.get(id, "").await?;
+        if b.is_some() {
+            this.interactor.log(&format!("skip {}", id)).await;
+            return Ok(false);
+        }
+        let res: LRes<bool> = rune::from_value(
+            f.call::<_, runtime::Future>(())
+                .into_result()?
+                .into_future()
+                .await
+                .into_result()?,
+        )?;
+        let res = res?;
+        if res && !this.dry_run {
+            this.interactor.log(&format!("exec {}", id)).await;
+            this.cache.set(id, "", 0).await?;
+        }
+        Ok(res)
     }
 }
 
@@ -169,5 +193,6 @@ pub fn module() -> Result<rune::Module, rune::ContextError> {
     m.function_meta(Dv::app)?;
     m.function_meta(Dv::auto)?;
     m.function_meta(Dv::exec)?;
+    m.function_meta(Dv::once)?;
     Ok(m)
 }

@@ -1,23 +1,25 @@
 use dv_api::process::Interactor;
 
-use super::Context;
+use crate::utils::LogFutResult;
+
+use super::{Context, LRes};
 
 pub async fn auto(
     ctx: &Context<'_>,
     uid: impl AsRef<str>,
     service: impl AsRef<str>,
     action: impl AsRef<str>,
-) -> Option<bool> {
+) -> LRes<bool> {
     let uid = uid.as_ref();
     let service = service.as_ref();
     let action = action.as_ref();
-    let user = ctx.try_get_user(uid).await?;
+    let user = ctx.get_user(uid).await?;
     if ctx.dry_run {
         ctx.interactor
             .log(&format!("[n] auto {} {}", service, action))
             .await;
-        return Some(true);
+        return Ok(true);
     }
-    ctx.async_assert_result(user.auto(service, action)).await?;
-    Some(true)
+    user.auto(service, action).log(ctx.interactor).await?;
+    Ok(true)
 }

@@ -71,7 +71,5 @@ async fn main() -> rune::support::Result<()> {
         .async_complete()
         .await
         .into_result()?;
-    let _: () = rune::from_value(output)?;
-
-    Ok(())
+    rune::from_value(output)?
 }

@@ -16,6 +16,6 @@ rune = "0.13.4"
 rune-modules = "0.13.4"
 rusqlite = "0.33.0"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-clap = { version = "4.5.29", features = ["derive"] }
+clap = { version = "4.5.30", features = ["derive"] }
 termion = "4.0.3"
 tokio-fd = "0.3.0"

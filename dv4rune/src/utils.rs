@@ -1,12 +1,51 @@
+#[async_trait::async_trait]
+pub trait LogResult<I: Interactor> {
+    async fn log(self, int: &I) -> Self;
+}
+
+#[async_trait::async_trait]
+impl<I: Sync + Interactor, T: Send, E: Send + ToString> LogResult<I> for Result<T, E> {
+    async fn log(self, int: &I) -> Self {
+        match &self {
+            Ok(_) => {}
+            Err(e) => {
+                int.log(&e.to_string()).await;
+            }
+        }
+        self
+    }
+}
+
+#[async_trait::async_trait]
+pub trait LogFutResult<I: Interactor> {
+    type Result;
+    async fn log(self, int: &I) -> Self::Result;
+}
+
+#[async_trait::async_trait]
+impl<
+        I: Sync + Interactor,
+        Fut: Send + std::future::Future<Output = Result<T, E>>,
+        T: Send,
+        E: Send + ToString,
+    > LogFutResult<I> for Fut
+{
+    type Result = Result<T, E>;
+    async fn log(self, int: &I) -> Self::Result {
+        self.await.log(int).await
+    }
+}
+
 macro_rules! value2 {
     ($t:ty, $v:expr) => {
-        rune::from_value::<$t>($v).map_err(|e| e.to_string())
+        rune::from_value::<$t>($v)
     };
     ($v:expr) => {
-        rune::from_value::<String>($v).map_err(|e| e.to_string())
+        rune::from_value::<String>($v)
     };
 }
 
+use dv_api::process::Interactor;
 pub(crate) use value2;
 
 macro_rules! obj_take2 {
@@ -44,13 +83,13 @@ pub(crate) use obj_take2;
 
 macro_rules! field {
     ($ctx:expr, $o:ident, $k:ident($v:expr, $p:expr)) => {
-        $ctx.assert_result(obj_take2!($o, stringify!($k), $v, $p))
+        obj_take2!($o, stringify!($k), $v, $p).log($ctx.interactor)
     };
     ($ctx:expr, $o:ident, $k:ident($t:ty)) => {
-        $ctx.assert_result(obj_take2!($o, stringify!($k), <$t>::default(), $t))
+        obj_take2!($o, stringify!($k), <$t>::default(), $t).log($ctx.interactor)
     };
     ($ctx:expr, $o:ident, $k:ident($v:expr,)) => {
-        $ctx.assert_result(obj_take2!($o, stringify!($k), $v, String))
+        obj_take2!($o, stringify!($k), $v, String).log($ctx.interactor)
     };
 }
 

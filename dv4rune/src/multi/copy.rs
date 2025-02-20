@@ -3,7 +3,10 @@ use dv_api::{
     process::Interactor,
     User,
 };
+use rune::support::Result as LRes;
 use tracing::{debug, trace};
+
+use crate::utils::LogFutResult;
 
 use super::Context;
 
@@ -15,11 +18,9 @@ async fn check_copy_file(
     dst_uid: &str,
     dst_path: &str,
     ts: u64,
-) -> Option<bool> {
-    let dst = ctx.try_get_user(dst_uid).await?;
-    let cache = ctx
-        .async_assert_result(ctx.cache.get(dst_uid, dst_path))
-        .await?;
+) -> LRes<bool> {
+    let dst = ctx.get_user(dst_uid).await?;
+    let cache = ctx.cache.get(dst_uid, dst_path).log(ctx.interactor).await?;
     let res = if cache.is_some_and(|dst_ts| {
         if dst_ts != ts {
             debug!("{} != {}", dst_ts, ts);
@@ -31,20 +32,25 @@ async fn check_copy_file(
         true
     } else {
         if src.hid != dst.hid {
-            let mut src = ctx
-                .async_assert_result(src.open(src_path, OpenFlags::READ))
+            let mut src = src
+                .open(src_path, OpenFlags::READ)
+                .log(ctx.interactor)
                 .await?;
-            let mut dst = ctx
-                .async_assert_result(dst.open(dst_path, OpenFlags::WRITE | OpenFlags::CREATE))
+            let mut dst = dst
+                .open(dst_path, OpenFlags::WRITE | OpenFlags::CREATE)
+                .log(ctx.interactor)
                 .await?;
-            ctx.async_assert_result(tokio::io::copy(&mut src, &mut dst))
-                .await;
+            tokio::io::copy(&mut src, &mut dst)
+                .log(ctx.interactor)
+                .await?;
         } else {
             let main = if src.is_system { src } else { dst };
-            ctx.async_assert_result(main.copy(src_path, dst_path)).await;
+            main.copy(src_path, dst_path).log(ctx.interactor).await?;
         }
-        ctx.async_assert_result(ctx.cache.set(dst_uid, dst_path, ts))
-            .await;
+        ctx.cache
+            .set(dst_uid, dst_path, ts)
+            .log(ctx.interactor)
+            .await?;
         true
     };
     ctx.interactor
@@ -58,7 +64,7 @@ async fn check_copy_file(
             dst_path
         ))
         .await;
-    Some(res)
+    Ok(res)
 }
 
 async fn check_copy_dir(
@@ -69,7 +75,7 @@ async fn check_copy_dir(
     dst_uid: &str,
     dst_path: impl Into<String>,
     meta: Vec<Metadata>,
-) -> Option<bool> {
+) -> LRes<bool> {
     let mut src_path = src_path.into();
     let mut dst_path = dst_path.into();
     let src_len = src_path.len();
@@ -83,7 +89,7 @@ async fn check_copy_dir(
         let res = check_copy_file(ctx, src, src_uid, &src_path, dst_uid, &dst_path, ts).await?;
         success |= res;
     }
-    Some(success)
+    Ok(success)
 }
 
 pub async fn copy(
@@ -92,26 +98,28 @@ pub async fn copy(
     src_path: impl AsRef<str>,
     dst_uid: impl AsRef<str>,
     dst_path: impl Into<String>,
-) -> Option<bool> {
+) -> LRes<bool> {
     let src_uid = src_uid.as_ref();
     let dst_uid = dst_uid.as_ref();
     let src_path = src_path.as_ref();
     let dst_path = dst_path.into();
-    ctx.assert_bool(!src_path.is_empty(), || "src_path is empty")
-        .await?;
-    ctx.assert_bool(!dst_uid.is_empty(), || "dst_uid is empty")
-        .await?;
+    if src_path.is_empty() {
+        ctx.interactor.log("src_path is empty").await;
+    }
+    if dst_path.is_empty() {
+        ctx.interactor.log("dst_path is empty").await;
+    }
     let mut dst_path = dst_path.to_string();
     trace!("copy {}:{} -> {}:{}", src_uid, src_path, dst_uid, dst_path);
-    let src = ctx.try_get_user(src_uid).await?;
+    let src = ctx.get_user(src_uid).await?;
     if src_path.ends_with('/') {
-        let DirInfo { path, files } = ctx.async_assert_result(src.check_dir(src_path)).await?;
+        let DirInfo { path, files } = src.check_dir(src_path).log(ctx.interactor).await?;
         if !dst_path.ends_with('/') {
             dst_path.push('/');
         }
         check_copy_dir(ctx, src, src_uid, path, dst_uid, dst_path, files).await
     } else {
-        let info = ctx.async_assert_result(src.check_path(src_path)).await?;
+        let info = src.check_path(src_path).log(ctx.interactor).await?;
         if dst_path.ends_with('/') {
             dst_path.push_str(
                 src_path

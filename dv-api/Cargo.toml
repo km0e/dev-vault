@@ -11,7 +11,7 @@ async-trait.workspace = true
 
 bitflags = "2.8.0"
 tokio-util = "0.7.13"
-tempfile = "3.16.0"
+tempfile = "3.17.1"
 etc-os-release = "0.1.1"
 fastrand = "2.3.0"
 home = { version = "0.5.11", optional = true }
