@@ -15,7 +15,7 @@ tempfile = "3.17.1"
 etc-os-release = "0.1.1"
 fastrand = "2.3.0"
 home = { version = "0.5.11", optional = true }
-russh = { version = "0.50.2", features = ["async-trait"] }
+russh = { version = "0.50.3", features = ["async-trait"] }
 russh-config = "0.50.0"
 russh-sftp = "2.0.8"
 rustix = { version = "0.38.44", features = ["pty"] }

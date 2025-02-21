@@ -10,7 +10,7 @@ use tracing::info;
 use crate::{
     cache::SqliteCache,
     interactor::TermInteractor,
-    multi::Context,
+    multi::{action, Context},
     utils::{field, obj2, obj_take2, value2, LogResult},
 };
 use support::Result as LRes;
@@ -163,22 +163,23 @@ impl Dv {
     async fn once(this: Ref<Self>, id: Ref<str>, f: runtime::Function) -> LRes<bool> {
         let id = id.as_ref();
         let b = this.cache.get(id, "").await?;
-        if b.is_some() {
-            this.interactor.log(&format!("skip {}", id)).await;
-            return Ok(false);
-        }
-        let res: LRes<bool> = rune::from_value(
-            f.call::<_, runtime::Future>(())
-                .into_result()?
-                .into_future()
-                .await
-                .into_result()?,
-        )?;
-        let res = res?;
-        if res && !this.dry_run {
-            this.interactor.log(&format!("exec {}", id)).await;
-            this.cache.set(id, "", 0).await?;
-        }
+        let res = b.is_none()//not cached
+        && {
+            let res: LRes<bool> = rune::from_value(
+                f.call::<_, runtime::Future>(())
+                    .into_result()?
+                    .into_future()
+                    .await
+                    .into_result()?,
+            )?;
+            res? //action success
+            && !this.dry_run//not dry run
+            && {
+                this.cache.set(id, "", 0).await?;
+                true
+            }
+        };
+        action!(this, res, "once {}", id);
         Ok(res)
     }
 }

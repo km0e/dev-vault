@@ -106,22 +106,19 @@ impl This {
 
 #[async_trait]
 impl UserImpl for This {
-    async fn file_attributes(&self, path: &str) -> Result<FileAttributes> {
+    async fn file_attributes(&self, path: &str) -> Result<(String, FileAttributes)> {
         #[cfg(feature = "path-home")]
         let path2 = self.expand_home(path);
         #[cfg(not(feature = "path-home"))]
         let path2 = Path::new(path);
 
         std::fs::metadata(&path2)
-            .map(|meta| (&meta).into())
+            .map(|meta| (path2.to_string_lossy().to_string(), (&meta).into()))
             .with_context(|_| error::IoSnafu {
                 about: format!("Cannot get metadata of {}", path),
             })
     }
     async fn glob_file_meta(&self, path: &str) -> Result<Vec<Metadata>> {
-        #[cfg(feature = "path-home")]
-        let path2 = self.expand_home(path);
-        #[cfg(not(feature = "path-home"))]
         let path2 = Path::new(path);
 
         let metadata = path2.metadata().with_context(|_| error::IoSnafu {
@@ -129,7 +126,7 @@ impl UserImpl for This {
         })?;
         if metadata.is_dir() {
             let mut result = Vec::new();
-            for entry in walkdir::WalkDir::new(&path2)
+            for entry in walkdir::WalkDir::new(path2)
                 .into_iter()
                 .filter_map(|e| e.ok())
             {
@@ -148,7 +145,7 @@ impl UserImpl for This {
                     continue;
                 };
                 let modified = modified.as_secs();
-                let Ok(rel_path) = file_path.strip_prefix(&path2) else {
+                let Ok(rel_path) = file_path.strip_prefix(path2) else {
                     continue;
                 };
                 result.push(Metadata {
@@ -209,9 +206,6 @@ impl UserImpl for This {
         Ok(cmd.into())
     }
     async fn open(&self, path: &str, opt: OpenFlags) -> Result<BoxedFile> {
-        #[cfg(feature = "path-home")]
-        let path2 = self.expand_home(path);
-        #[cfg(not(feature = "path-home"))]
         let path2 = Path::new(path);
 
         let file = tokio::fs::OpenOptions::from(opt)

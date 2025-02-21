@@ -19,17 +19,16 @@ pub async fn exec(
         })
         .unwrap_or_else(|| Script::Whole(commands));
     let user = ctx.get_user(uid).await?;
-    if ctx.dry_run {
-        ctx.interactor.log(&format!("[n] exec {}", commands)).await;
-        return Ok(true);
-    }
-    let mut pp = user.exec(script).log(ctx.interactor).await?;
+    if !ctx.dry_run {
+        let mut pp = user.exec(script).log(ctx.interactor).await?;
 
-    let ec = ctx.interactor.ask(&mut pp).log(ctx.interactor).await?;
-    if ec != 0 {
-        ctx.interactor
-            .log(&format!("unexpect exit code: {}", ec))
-            .await;
+        let ec = ctx.interactor.ask(&mut pp).log(ctx.interactor).await?;
+        if ec != 0 {
+            let msg = format!("unexpect exit code: {}", ec);
+            ctx.interactor.log(&msg).await;
+            Err(rune::support::Error::msg(msg))?
+        }
     }
+    action!(ctx, true, "exec {}", commands);
     Ok(true)
 }

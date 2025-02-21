@@ -4,7 +4,7 @@ use dv_api::{
     User,
 };
 use rune::support::Result as LRes;
-use tracing::{debug, trace};
+use tracing::{debug, info, trace};
 
 use crate::utils::LogFutResult;
 
@@ -53,17 +53,15 @@ async fn check_copy_file(
             .await?;
         true
     };
-    ctx.interactor
-        .log(&format!(
-            "[{}] {} copy {}:{} -> {}:{}",
-            if ctx.dry_run { "n" } else { "a" },
-            if res { "exec" } else { "skip" },
-            src_uid,
-            src_path,
-            dst_uid,
-            dst_path
-        ))
-        .await;
+    action!(
+        ctx,
+        res,
+        "copy {}:{} -> {}:{}",
+        src_uid,
+        src_path,
+        dst_uid,
+        dst_path
+    );
     Ok(res)
 }
 
@@ -78,6 +76,10 @@ async fn check_copy_dir(
 ) -> LRes<bool> {
     let mut src_path = src_path.into();
     let mut dst_path = dst_path.into();
+    info!(
+        "check_copy_dir {}:{} -> {}:{}",
+        src_uid, src_path, dst_uid, dst_path
+    );
     let src_len = src_path.len();
     let dst_len = dst_path.len();
     let mut success = false;

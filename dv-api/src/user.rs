@@ -8,7 +8,8 @@ use crate::{
 
 #[async_trait::async_trait]
 pub trait UserImpl {
-    async fn file_attributes(&self, path: &str) -> Result<FileAttributes>;
+    //FIX:about path encoding, should I use Utf8Path?
+    async fn file_attributes(&self, path: &str) -> Result<(String, FileAttributes)>;
     async fn glob_file_meta(&self, path: &str) -> Result<Vec<Metadata>>;
     async fn copy(&self, src: &str, dst: &str) -> Result<()>;
     async fn open(&self, path: &str, opt: OpenFlags) -> Result<BoxedFile>;

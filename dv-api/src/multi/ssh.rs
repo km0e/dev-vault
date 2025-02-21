@@ -46,7 +46,7 @@ impl SSHSession {
 
 #[async_trait]
 impl UserImpl for SSHSession {
-    async fn file_attributes(&self, path: &str) -> Result<FileAttributes> {
+    async fn file_attributes(&self, path: &str) -> Result<(String, FileAttributes)> {
         #[cfg(feature = "path-home")]
         let path = self.expand_home(path);
         #[cfg(feature = "path-home")]
@@ -55,14 +55,10 @@ impl UserImpl for SSHSession {
         self.sftp
             .metadata(path)
             .await
+            .map(|m| (path.to_string(), m))
             .context(error::SFTPSnafu { about: path })
     }
     async fn glob_file_meta(&self, path: &str) -> crate::Result<Vec<Metadata>> {
-        #[cfg(feature = "path-home")]
-        let path = self.expand_home(path);
-        #[cfg(feature = "path-home")]
-        let path = path.as_str();
-
         let metadata = self
             .sftp
             .metadata(path)
@@ -187,11 +183,6 @@ impl UserImpl for SSHSession {
         Ok(channel.into())
     }
     async fn open(&self, path: &str, opt: OpenFlags) -> crate::Result<BoxedFile> {
-        #[cfg(feature = "path-home")]
-        let path = self.expand_home(path);
-        #[cfg(feature = "path-home")]
-        let path = path.as_str();
-
         let open_flags = opt.into();
         let file = loop {
             match self.sftp.open_with_flags(path, open_flags).await {

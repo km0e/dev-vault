@@ -49,36 +49,11 @@ impl User {
             am,
         })
     }
-    // fn normalize<'a>(&self, path: &'a Path) -> crate::Result<Cow<'a, Path>> {
-    //     let path = path
-    //         .parse_dot()
-    //         .with_context(|_| error::IoSnafu { about: "dedot" })?;
-    //     let path = if path.has_root() {
-    //         path
-    //     } else {
-    //         let path = match (
-    //             path.strip_prefix("~"),
-    //             self.params.home.as_ref(),
-    //             self.params.mount.as_ref(),
-    //         ) {
-    //             (Ok(path), Some(home), _) => home.join(path),
-    //             (Ok(_), None, _) => whatever!("we need home"),
-    //             (Err(_), _, Some(mount)) => mount.join(path),
-    //             (Err(_), Some(home), None) => home.join(path),
-    //             _ => whatever!("we need mount or home"),
-    //         };
-    //         Cow::Owned(path)
-    //     };
-    //     Ok(path)
-    // }
     fn normalize2<'a>(
         &self,
         path: impl Into<&'a camino::Utf8Path>,
     ) -> crate::Result<Cow<'a, camino::Utf8Path>> {
         let path = path.into();
-        // let path = path
-        //     .parse_dot()
-        //     .with_context(|_| error::IoSnafu { about: "dedot" })?;
         let path = if path.has_root() {
             path.into()
         } else {
@@ -86,22 +61,11 @@ impl User {
                 (false, Some(mount)) => mount.join(path).into(),
                 _ => Cow::Borrowed(path),
             };
-
-            // let path = match (
-            //     path.strip_prefix("~"),
-            //     self.params.mount.as_ref(),
-            // ) {
-            //     (Ok(path), Some(home), _) => home.join(path),
-            //     (Ok(_), None, _) => whatever!("we need home"),
-            //     (Err(_), _, Some(mount)) => mount.join(path),
-            //     (Err(_), Some(home), None) => home.join(path),
-            //     _ => whatever!("we need mount or home"),
-            // };
             path
         };
         Ok(path)
     }
-    pub async fn check_file(&self, path: &str) -> Result<FileAttributes> {
+    pub async fn check_file(&self, path: &str) -> Result<(String, FileAttributes)> {
         self.inner
             .file_attributes(self.normalize2(path)?.as_str())
             .await
@@ -109,9 +73,9 @@ impl User {
     pub async fn check_path<'a, 'b: 'a>(&'b self, path: &'a str) -> Result<CheckInfo> {
         let path = self.normalize2(path)?;
         let path = path.as_str();
-        let fa = self.inner.file_attributes(path).await?;
+        let (path, fa) = self.inner.file_attributes(path).await?;
         let info = if fa.is_dir() {
-            let files = self.inner.glob_file_meta(path).await?;
+            let files = self.inner.glob_file_meta(&path).await?;
             CheckInfo::Dir(DirInfo {
                 path: path.to_string(),
                 files,
@@ -131,7 +95,11 @@ impl User {
     pub async fn check_dir(&self, path: &str) -> Result<DirInfo> {
         let path = self.normalize2(path)?;
         let path = path.as_str();
-        let metadata = self.inner.glob_file_meta(path).await?;
+        let (path, fa) = self.inner.file_attributes(path).await?;
+        if !fa.is_dir() {
+            whatever!("{} not a directory", path);
+        }
+        let metadata = self.inner.glob_file_meta(&path).await?;
         Ok(DirInfo {
             path: path.to_string(),
             files: metadata,

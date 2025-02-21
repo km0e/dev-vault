@@ -16,7 +16,7 @@ xcfg-rs = { version = "0.3.3", features = ["full"] }
 clap = { version = "4.5.30", features = ["derive"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 rusqlite = "0.33.0"
-serde = { version = "1.0.217", features = ["derive"] }
+serde = { version = "1.0.218", features = ["derive"] }
 tokio-fd = "0.3.0"
 termion = "4.0.3"
 futures = "0.3.31"

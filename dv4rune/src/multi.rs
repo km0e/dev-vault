@@ -10,6 +10,14 @@ pub struct Context<'a> {
     users: &'a HashMap<String, User>,
 }
 
+macro_rules! action {
+    ($ctx:ident, $suc:ident, $fmt:literal, $($arg:tt)*) => {
+        $ctx.interactor.log(&format!(concat!("[{}] {} ",$fmt), if $ctx.dry_run { "n" } else { "a" }, if $suc { "exec" } else { "skip" }, $($arg)*)).await;
+    };
+}
+
+pub(crate) use action;
+
 impl<'s> Context<'s> {
     pub fn new<'a>(
         dry_run: bool,

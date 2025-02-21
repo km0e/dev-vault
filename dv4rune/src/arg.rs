@@ -8,7 +8,7 @@ fn default_config() -> PathBuf {
 }
 
 #[derive(Parser, Debug)]
-#[command(version = env!("CARGO_PKG_VERSION"), about = "Simple CLI to show how to use xcfg")]
+#[command(version = env!("CARGO_PKG_VERSION"), about = "Simple CLI to use dv-api with rune")]
 pub struct Cli {
     #[arg(short, long, default_value_os_t = default_config())]
     pub directory: PathBuf,

@@ -14,12 +14,9 @@ pub async fn auto(
     let service = service.as_ref();
     let action = action.as_ref();
     let user = ctx.get_user(uid).await?;
-    if ctx.dry_run {
-        ctx.interactor
-            .log(&format!("[n] auto {} {}", service, action))
-            .await;
-        return Ok(true);
-    }
-    user.auto(service, action).log(ctx.interactor).await?;
+    if !ctx.dry_run {
+        user.auto(service, action).log(ctx.interactor).await?;
+    };
+    action!(ctx, true, "auto {} {}", service, action);
     Ok(true)
 }

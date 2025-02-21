@@ -8,7 +8,7 @@ fn default_config() -> PathBuf {
 }
 
 #[derive(Parser, Debug)]
-#[command(version = env!("CARGO_PKG_VERSION"), about = "Simple CLI to show how to use xcfg")]
+#[command(version = env!("CARGO_PKG_VERSION"), about = "Simple CLI to use dv-api with toml/yaml/json")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Which,
@@ -20,7 +20,7 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Which {
-    #[command(visible_alias = "fc", about = "Print full config")]
+    #[command(visible_alias = "fc", about = "Print example config")]
     FullConfig { extension: Option<String> },
     #[command(visible_alias = "e", about = "Execute plan")]
     Exec {
