@@ -1,5 +1,5 @@
 use crate::cache::SqliteCache;
-use dv_api::{process::DynInteractor, User};
+use dv_api::{User, process::DynInteractor};
 
 pub trait ContextImpl: Sync + Send {
     fn get_user(&self, uid: &str, for_system: bool) -> Option<&User>;

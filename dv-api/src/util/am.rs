@@ -7,8 +7,8 @@ mod dev {
     pub use super::super::dev::*;
     pub use super::{Am, BoxedAm};
     pub use crate::{
-        process::{DynInteractor, Script},
         User,
+        process::{DynInteractor, Script},
     };
 }
 use dev::*;

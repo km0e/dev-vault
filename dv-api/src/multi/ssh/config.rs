@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use russh::client::{self, AuthResult, Handle};
-use snafu::{whatever, ResultExt};
+use snafu::whatever;
 use tokio::io::AsyncReadExt;
 use tracing::{info, warn};
 
-use crate::{error, util::Os};
+use crate::util::Os;
 
-use super::{dev::*, Client, SSHSession};
+use super::{Client, SSHSession, dev::*};
 
 #[derive(Debug, Default)]
 pub struct SSHConfig {
@@ -42,11 +42,7 @@ impl UserCast for SSHConfig {
         let channel = h.channel_open_session().await?;
         channel.request_subsystem(true, "sftp").await?;
 
-        let sftp = russh_sftp::client::SftpSession::new(channel.into_stream())
-            .await
-            .with_context(|_| error::SFTPSnafu {
-                about: "crate sftp session",
-            })?;
+        let sftp = russh_sftp::client::SftpSession::new(channel.into_stream()).await?;
 
         let command_util = (&p).into();
         let sys = SSHSession {
@@ -61,7 +57,7 @@ impl UserCast for SSHConfig {
     }
 }
 
-async fn connect(host: String, passwd: Option<String>) -> crate::Result<(Handle<Client>, String)> {
+async fn connect(host: String, passwd: Option<String>) -> Result<(Handle<Client>, String)> {
     let host_cfg = russh_config::parse_home(&host)?;
     let config = client::Config::default();
     let config = Arc::new(config);
@@ -78,7 +74,7 @@ async fn connect(host: String, passwd: Option<String>) -> crate::Result<(Handle<
         return Ok((session, host_cfg.user));
     };
     warn!("authenticate_none failed");
-    use russh::{keys, MethodKind};
+    use russh::{MethodKind, keys};
     if let (Some(path), true) = (
         host_cfg.identity_file,
         remaining_methods.contains(&MethodKind::PublicKey),

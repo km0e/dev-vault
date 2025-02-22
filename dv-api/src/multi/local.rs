@@ -1,8 +1,8 @@
-use crate::wrap::UserCast;
+use crate::{Error, wrap::UserCast};
 
 use super::dev::*;
 use process::PtyProcess;
-use snafu::ResultExt;
+use snafu::whatever;
 #[cfg(feature = "path-home")]
 use std::path::PathBuf;
 
@@ -83,7 +83,7 @@ pub(crate) struct This {
 }
 
 impl This {
-    pub async fn new(is_system: bool) -> crate::Result<Self> {
+    pub async fn new(is_system: bool) -> Result<Self> {
         let systemd = Systemd::new(is_system).await?;
         Ok(Self {
             #[cfg(feature = "path-home")]
@@ -104,6 +104,17 @@ impl This {
     }
 }
 
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Self {
+        match e.kind() {
+            std::io::ErrorKind::NotFound => Error::NotFound,
+            _ => Error::File {
+                message: format!("source: {}", e),
+            },
+        }
+    }
+}
+
 #[async_trait]
 impl UserImpl for This {
     async fn file_attributes(&self, path: &str) -> Result<(String, FileAttributes)> {
@@ -112,18 +123,13 @@ impl UserImpl for This {
         #[cfg(not(feature = "path-home"))]
         let path2 = Path::new(path);
 
-        std::fs::metadata(&path2)
-            .map(|meta| (path2.to_string_lossy().to_string(), (&meta).into()))
-            .with_context(|_| error::IoSnafu {
-                about: format!("Cannot get metadata of {}", path),
-            })
+        Ok(std::fs::metadata(&path2)
+            .map(|meta| (path2.to_string_lossy().to_string(), (&meta).into()))?)
     }
     async fn glob_file_meta(&self, path: &str) -> Result<Vec<Metadata>> {
         let path2 = Path::new(path);
 
-        let metadata = path2.metadata().with_context(|_| error::IoSnafu {
-            about: format!("Cannot get metadata of {}", path),
-        })?;
+        let metadata = path2.metadata()?;
         if metadata.is_dir() {
             let mut result = Vec::new();
             for entry in walkdir::WalkDir::new(path2)
@@ -155,38 +161,31 @@ impl UserImpl for This {
             }
             Ok(result)
         } else {
-            Err(error::Error::Whatever {
-                message: format!("{} is not a directory", path),
-            })
+            whatever!("{} not a directory", path)
         }
     }
     async fn copy(&self, src: &str, dst: &str) -> Result<()> {
-        loop {
-            match std::fs::copy(src, dst) {
-                Ok(_) => break Ok(()),
-                Err(e)
-                    if e.kind() == std::io::ErrorKind::NotFound && {
-                        #[cfg(debug_assertions)]
-                        {
-                            Path::new(src).exists()
-                        }
-                        #[cfg(not(debug_assertions))]
-                        {
-                            true
-                        }
-                    } =>
+        Ok(loop {
+            let Err(e) = std::fs::copy(src, dst) else {
+                break Ok(());
+            };
+            if e.kind() != std::io::ErrorKind::NotFound || {
+                #[cfg(debug_assertions)]
                 {
-                    let parent = Path::new(dst).parent().unwrap();
-                    if let Err(e) = std::fs::create_dir_all(parent) {
-                        break Err(e);
-                    }
+                    Path::new(src).exists()
                 }
-                Err(e) => break Err(e),
+                #[cfg(not(debug_assertions))]
+                {
+                    true
+                }
+            } {
+                break Err(e);
             }
-        }
-        .with_context(|_| error::IoSnafu {
-            about: format!("{} -> {}", src, dst),
-        })
+            let parent = Path::new(dst).parent().unwrap();
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                break Err(e);
+            }
+        }?)
     }
     async fn auto(&self, name: &str, action: &str) -> Result<()> {
         match action {
@@ -198,20 +197,13 @@ impl UserImpl for This {
     }
     async fn exec(&self, command: Script<'_, '_>) -> Result<BoxedPtyProcess> {
         trace!("try to exec command");
-        let cmd = PtyProcess::new(command)
-            .await
-            .with_context(|_| error::IoSnafu {
-                about: "create new pty",
-            })?;
+        let cmd = PtyProcess::new(command).await?;
         Ok(cmd.into())
     }
     async fn open(&self, path: &str, opt: OpenFlags) -> Result<BoxedFile> {
         let path2 = Path::new(path);
 
-        let file = tokio::fs::OpenOptions::from(opt)
-            .open(&path2)
-            .await
-            .with_context(|_| error::IoSnafu { about: path })?;
+        let file = tokio::fs::OpenOptions::from(opt).open(&path2).await?;
         Ok(Box::new(file))
     }
 }

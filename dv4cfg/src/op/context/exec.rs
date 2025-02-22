@@ -1,6 +1,6 @@
 use dv_api::{
-    process::{DynInteractor, Interactor},
     User,
+    process::{DynInteractor, Interactor},
 };
 
 use crate::{cache::SqliteCache, user::UserManager};

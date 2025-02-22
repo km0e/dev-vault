@@ -7,8 +7,9 @@ mod utils;
 
 use clap::Parser;
 use rune::{
+    Diagnostics, Vm,
     termcolor::{ColorChoice, StandardStream},
-    to_value, Diagnostics, Vm,
+    to_value,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 

@@ -1,9 +1,9 @@
 use std::fmt::Debug;
 
 use crate::{
+    Result,
     fs::{BoxedFile, FileAttributes, Metadata, OpenFlags},
     process::{BoxedPtyProcess, Script},
-    Result,
 };
 
 #[async_trait::async_trait]

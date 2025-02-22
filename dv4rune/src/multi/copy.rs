@@ -1,7 +1,7 @@
 use dv_api::{
+    User,
     fs::{CheckInfo, DirInfo, Metadata, OpenFlags},
     process::Interactor,
-    User,
 };
 use rune::support::Result as LRes;
 use tracing::{debug, info, trace};
@@ -74,8 +74,8 @@ async fn check_copy_dir(
     dst_path: impl Into<String>,
     meta: Vec<Metadata>,
 ) -> LRes<bool> {
-    let mut src_path = src_path.into();
-    let mut dst_path = dst_path.into();
+    let mut src_path: String = src_path.into();
+    let mut dst_path: String = dst_path.into();
     info!(
         "check_copy_dir {}:{} -> {}:{}",
         src_uid, src_path, dst_uid, dst_path

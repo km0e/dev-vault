@@ -2,11 +2,9 @@ use std::io::Write;
 
 use async_trait::async_trait;
 use dv_api::process::{BoxedPtyProcess, Interactor};
-use snafu::ResultExt;
 use termion::{raw::IntoRawMode, terminal_size};
 use tokio::sync::Mutex;
 
-use dv_api::error;
 #[derive(Debug)]
 pub struct TermInteractor {
     excl: Mutex<()>,
@@ -27,24 +25,15 @@ impl Interactor for TermInteractor {
         println!("{}", msg);
     }
     async fn ask(&self, p: &mut BoxedPtyProcess) -> dv_api::Result<i32> {
-        let (width, height) = terminal_size().with_context(|_| error::IoSnafu {
-            about: "terminal size",
-        })?;
+        let (width, height) = terminal_size()?;
         p.window_change(width as u32, height as u32, 0, 0).await?;
         #[allow(unused_variables)]
         let g = self.excl.lock().await;
-        let mut raw = std::io::stdout()
-            .into_raw_mode()
-            .with_context(|_| error::IoSnafu {
-                about: "into_raw_mode and into_alternate_screen",
-            })?;
-        raw.flush()
-            .with_context(|_| error::IoSnafu { about: "flush raw" })?;
+        let mut raw = std::io::stdout().into_raw_mode()?;
+        raw.flush()?;
         //NOTE:tokio::io will block the terminal
-        let stdin =
-            tokio_fd::AsyncFd::try_from(0).with_context(|_| error::IoSnafu { about: "stdin" })?;
-        let stdout =
-            tokio_fd::AsyncFd::try_from(1).with_context(|_| error::IoSnafu { about: "stdout" })?;
+        let stdin = tokio_fd::AsyncFd::try_from(0)?;
+        let stdout = tokio_fd::AsyncFd::try_from(1)?;
         let ec = p.sync(Box::new(stdin), Box::new(stdout)).await?;
         Ok(ec)
     }

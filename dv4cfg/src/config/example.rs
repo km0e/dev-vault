@@ -1,18 +1,20 @@
 use xcfg::XCfg;
 
 use super::{
+    Cite, FullConfig, Target, TaskAttr,
     group::TaskGroupConfig,
     user::{LocalDeviceConfig, SSHDeviceConfig, SSHUserConfig},
-    Cite, FullConfig, Target, TaskAttr,
 };
 use crate::task::config::*;
 
 pub fn example(fmt: xcfg::Format) -> String {
     let id = Some("example_id".to_string());
     let local = Some(LocalDeviceConfig::default().system(SSHUserConfig::new("system", "system")));
-    let ssh = vec![SSHDeviceConfig::new("r0", [])
-        .os("debian")
-        .root(SSHUserConfig::new("r0_root", "r").passwd("passwd"))];
+    let ssh = vec![
+        SSHDeviceConfig::new("r0", [])
+            .os("debian")
+            .root(SSHUserConfig::new("r0_root", "r").passwd("passwd")),
+    ];
     let auto = vec![
         AutoTaskConfig::new(
             TaskAttr::new("service setup").with_next(["service reload"]),

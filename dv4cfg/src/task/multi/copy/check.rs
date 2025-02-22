@@ -1,7 +1,7 @@
 use super::dev::*;
 use dv_api::{
-    fs::{CheckInfo, DirInfo, Metadata},
     User,
+    fs::{CheckInfo, DirInfo, Metadata},
 };
 use std::borrow::Cow;
 use tracing::{debug, info, trace};

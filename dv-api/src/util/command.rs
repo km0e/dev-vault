@@ -1,4 +1,4 @@
-use super::{dev::*, Os};
+use super::{Os, dev::*};
 mod dev {
     pub use super::super::dev::*;
     pub use super::{BoxedCommandUtil, CommandUtil};

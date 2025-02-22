@@ -33,6 +33,3 @@ impl TaskAttr {
 pub trait TaskComplete<I> {
     fn cast(self, dry_run: bool, target: &Target) -> TaskParts<I>;
 }
-
-
-

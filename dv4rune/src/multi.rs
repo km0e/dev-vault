@@ -1,5 +1,5 @@
 use crate::{cache::SqliteCache, interactor::TermInteractor};
-use dv_api::{process::Interactor, User};
+use dv_api::{User, process::Interactor};
 use rune::support::Result as LRes;
 use std::collections::HashMap;
 

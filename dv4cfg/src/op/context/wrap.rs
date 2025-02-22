@@ -1,4 +1,4 @@
-use dv_api::{process::DynInteractor, User};
+use dv_api::{User, process::DynInteractor};
 use snafu::OptionExt;
 
 use crate::cache::SqliteCache;

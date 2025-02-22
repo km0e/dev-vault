@@ -1,9 +1,3 @@
-use std::path::Path;
-
-use snafu::ResultExt;
-
-use crate::error;
-
 use super::util::AsyncStream;
 
 pub use russh_sftp::protocol::FileAttributes;
@@ -12,23 +6,6 @@ pub use russh_sftp::protocol::FileAttributes;
 pub struct Metadata {
     pub path: String,
     pub ts: u64,
-}
-
-impl TryFrom<&Path> for Metadata {
-    type Error = crate::Error;
-    fn try_from(path: &Path) -> crate::Result<Self> {
-        let mtime = path
-            .metadata()
-            .and_then(|meta| meta.modified())
-            .with_context(|_| error::IoSnafu {
-                about: path.display().to_string(),
-            })?;
-        let mtime = mtime.duration_since(std::time::UNIX_EPOCH)?.as_secs();
-        Ok(Self {
-            path: path.to_string_lossy().to_string(),
-            ts: mtime,
-        })
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -58,8 +35,6 @@ bitflags::bitflags! {
 }
 
 #[async_trait::async_trait]
-pub trait FileImpl: AsyncStream {
-    async fn ts(&mut self) -> crate::Result<u64>;
-}
+pub trait FileImpl: AsyncStream {}
 
 pub type BoxedFile = Box<dyn FileImpl + Unpin + Send>;

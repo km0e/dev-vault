@@ -5,12 +5,12 @@ use snafu::whatever;
 use tracing::info;
 
 use crate::{
+    Result,
     fs::{BoxedFile, CheckInfo, DirInfo, FileAttributes, Metadata, OpenFlags},
     params::Params,
     process::{BoxedPtyProcess, DynInteractor, Script},
     user::BoxedUser,
     util::BoxedAm,
-    Result,
 };
 
 #[async_trait]

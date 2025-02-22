@@ -1,7 +1,7 @@
 use std::task::Poll;
 
-use russh::{client::Msg, Channel, ChannelMsg, CryptoVec};
-use snafu::{whatever, ResultExt};
+use russh::{Channel, ChannelMsg, CryptoVec, client::Msg};
+use snafu::whatever;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio_util::sync::ReusableBoxFuture;
 use tracing::{debug, trace};
@@ -144,15 +144,15 @@ impl PtyProcessImpl for Process {
                             debug!("sync {} byte to remote",n);
                             self.channel.data(&buf[..n]).await?;
                         }
-                        Err(e) => Err(e).context(error::IoSnafu{about:"stdin read"})?,
+                        Err(e) => Err(e)?,
                     };
                 },
                 msg = self.channel.wait() => {
                     match msg {
                         Some(ChannelMsg::Data { ref data }) => {
                             debug!("sync {} byte to local",data.len());
-                            writer.write_all(data).await.context(error::IoSnafu{about:"writer write"})?;
-                            writer.flush().await.context(error::IoSnafu{about:"writer flush"})?
+                            writer.write_all(data).await?;
+                            writer.flush().await?
                         }
                         Some(ChannelMsg::ExitStatus { exit_status }) => {
                             if !reader_closed {

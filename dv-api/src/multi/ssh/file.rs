@@ -1,7 +1,4 @@
 use async_trait::async_trait;
-use snafu::{whatever, ResultExt};
-
-use crate::error;
 
 use super::{FileImpl, OpenFlags};
 use russh_sftp::protocol::OpenFlags as ThisOpenFlags;
@@ -32,15 +29,4 @@ impl From<OpenFlags> for ThisOpenFlags {
 }
 
 #[async_trait]
-impl FileImpl for russh_sftp::client::fs::File {
-    async fn ts(&mut self) -> crate::Result<u64> {
-        let metadata = self
-            .metadata()
-            .await
-            .context(error::SFTPSnafu { about: "metadata" })?;
-        let Some(mtime) = metadata.mtime else {
-            whatever!("get mtime fail");
-        };
-        Ok(mtime as u64)
-    }
-}
+impl FileImpl for russh_sftp::client::fs::File {}

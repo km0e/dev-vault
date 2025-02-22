@@ -1,6 +1,6 @@
 [workspace]
 members = ["dv-api", "dv4cfg", "dv4rune"]
-resolver = "2"
+resolver = "3"
 
 [workspace.dependencies]
 tokio = { version = "1.43.0", features = [

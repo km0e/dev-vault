@@ -9,7 +9,7 @@ use std::{
 };
 
 use rustix::termios;
-use snafu::{OptionExt, ResultExt};
+use snafu::OptionExt;
 use tokio::{
     fs::File,
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
@@ -121,10 +121,7 @@ impl PtyProcessImpl for PtyProcess {
     }
     async fn wait(&mut self) -> crate::Result<i32> {
         self.inner
-            .wait()
-            .context(error::IoSnafu {
-                about: "wait process",
-            })?
+            .wait()?
             .code()
             .with_whatever_context(|| "unkown exit code")
     }
@@ -135,9 +132,7 @@ impl PtyProcessImpl for PtyProcess {
         if let Err(e) = res {
             //FIX:Why does an uncategorized error occur when the child process exits?
             if e.raw_os_error() != Some(5) {
-                return Err(e).context(error::IoSnafu {
-                    about: "process output read",
-                });
+                Err(e)?;
             }
         }
         let _ = ManuallyDrop::new(stdio);
@@ -203,10 +198,7 @@ impl PtyProcessImpl for PtyProcess {
         debug!("child process exited");
         let _ = ManuallyDrop::new(stdin);
         let _ = ManuallyDrop::new(stdout);
-        ec.and_then(|ec| if ec == 0 { Ok(0) } else { err.map(|_| ec) })
-            .context(error::IoSnafu {
-                about: "process sync",
-            })
+        Ok(ec.and_then(|ec| if ec == 0 { Ok(0) } else { err.map(|_| ec) })?)
     }
 }
 impl From<PtyProcess> for BoxedPtyProcess {

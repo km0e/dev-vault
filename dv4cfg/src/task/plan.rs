@@ -1,8 +1,8 @@
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicU32, AtomicU8, Ordering},
         Arc,
+        atomic::{AtomicU8, AtomicU32, Ordering},
     },
 };
 

@@ -1,11 +1,14 @@
+use crate::Error;
+
 use super::dev::{self, *};
 use russh::client;
 use russh_sftp::{client::SftpSession, protocol::StatusCode};
-use snafu::{whatever, ResultExt};
+use snafu::whatever;
 use tokio::io::AsyncWriteExt;
 use tracing::warn;
 mod config;
 pub use config::SSHConfig;
+mod error;
 mod file;
 mod process;
 
@@ -44,6 +47,22 @@ impl SSHSession {
     }
 }
 
+impl From<russh_sftp::client::error::Error> for Error {
+    fn from(e: russh_sftp::client::error::Error) -> Self {
+        match e {
+            russh_sftp::client::error::Error::Status(s) => match s.status_code {
+                StatusCode::NoSuchFile => Error::NotFound,
+                _ => Error::File {
+                    message: format!("source: {}", s.error_message),
+                },
+            },
+            _ => Error::File {
+                message: format!("source: {}", e),
+            },
+        }
+    }
+}
+
 #[async_trait]
 impl UserImpl for SSHSession {
     async fn file_attributes(&self, path: &str) -> Result<(String, FileAttributes)> {
@@ -51,30 +70,20 @@ impl UserImpl for SSHSession {
         let path = self.expand_home(path);
         #[cfg(feature = "path-home")]
         let path = path.as_str();
-
-        self.sftp
-            .metadata(path)
-            .await
-            .map(|m| (path.to_string(), m))
-            .context(error::SFTPSnafu { about: path })
-    }
-    async fn glob_file_meta(&self, path: &str) -> crate::Result<Vec<Metadata>> {
-        let metadata = self
+        Ok(self
             .sftp
             .metadata(path)
             .await
-            .context(error::SFTPSnafu { about: path })?;
+            .map(|m| (path.to_string(), m))?)
+    }
+    async fn glob_file_meta(&self, path: &str) -> crate::Result<Vec<Metadata>> {
+        let metadata = self.sftp.metadata(path).await?;
         if metadata.is_dir() {
             let mut stack = vec![path.to_string()];
             let prefix = format!("{path}/");
             let mut infos = Vec::new();
             while let Some(path) = stack.pop() {
-                for entry in self
-                    .sftp
-                    .read_dir(&path)
-                    .await
-                    .context(error::SFTPSnafu { about: &path })?
-                {
+                for entry in self.sftp.read_dir(&path).await? {
                     let sub_path = format!("{}/{}", path, entry.file_name());
                     if entry.file_type().is_dir() {
                         stack.push(sub_path);
@@ -142,39 +151,25 @@ impl UserImpl for SSHSession {
                     name.push(c);
                 }
                 use russh_sftp::protocol::OpenFlags;
-                match self
+                let res = self
                     .sftp
                     .open_with_flags(
                         &name,
                         OpenFlags::CREATE | OpenFlags::WRITE | OpenFlags::EXCLUDE,
                     )
-                    .await
-                {
-                    Ok(mut file) => {
-                        file.write_all(format!("trap '{{ rm -f -- {}}}' EXIT;", name).as_bytes())
-                            .await
-                            .with_context(|_| error::IoSnafu {
-                                about: "write trap",
-                            })?;
-                        for blk in input {
-                            file.write_all(blk.as_bytes()).await.with_context(|_| {
-                                error::IoSnafu {
-                                    about: "write script",
-                                }
-                            })?;
-                        }
-                        break;
+                    .await;
+                if let Ok(mut file) = res {
+                    file.write_all(format!("trap '{{ rm -f -- {}}}' EXIT;", name).as_bytes())
+                        .await?;
+                    for blk in input {
+                        file.write_all(blk.as_bytes()).await?;
                     }
-                    _ if retry > 0 => {
-                        retry -= 1;
-                        name.clear();
-                    }
-                    Err(e) => {
-                        return Err(e).context(error::SFTPSnafu {
-                            about: format!("create temp file {}", name),
-                        })?;
-                    }
+                    break;
+                } else if retry == 0 {
+                    res?;
                 }
+                retry -= 1;
+                name.clear();
             }
             channel.exec(true, format!("{} {}", program, name)).await?;
         } else {
@@ -191,19 +186,11 @@ impl UserImpl for SSHSession {
                     if s.status_code == StatusCode::NoSuchFile =>
                 {
                     let parent = path.rsplit_once("/").unwrap().0;
-                    self.sftp
-                        .create_dir(parent)
-                        .await
-                        .with_context(|_| error::SFTPSnafu {
-                            about: format!("crate dir {}", parent),
-                        })?;
+                    self.sftp.create_dir(parent).await?;
                 }
                 Err(e) => break Err(e),
             }
-        }
-        .with_context(|_| error::SFTPSnafu {
-            about: format!("fail to write {}", path),
-        })?;
+        }?;
         Ok(Box::new(file))
     }
 }

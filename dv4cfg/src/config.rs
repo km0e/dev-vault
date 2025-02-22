@@ -105,9 +105,10 @@ impl<I: ContextImpl> Config<I> {
         let plans = match id {
             Some(id) => {
                 if let Some(g) = self.group.get(id) {
-                    vec![g
-                        .cast(&self.group, &self.tasks, &mut filter)
-                        .expect("can't cast group")]
+                    vec![
+                        g.cast(&self.group, &self.tasks, &mut filter)
+                            .expect("can't cast group"),
+                    ]
                 } else {
                     Vec::new()
                 }

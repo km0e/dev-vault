@@ -1,9 +1,7 @@
-#[async_trait::async_trait]
 pub trait LogResult<I: Interactor> {
     async fn log(self, int: &I) -> Self;
 }
 
-#[async_trait::async_trait]
 impl<I: Sync + Interactor, T: Send, E: Send + ToString> LogResult<I> for Result<T, E> {
     async fn log(self, int: &I) -> Self {
         match &self {
@@ -16,19 +14,17 @@ impl<I: Sync + Interactor, T: Send, E: Send + ToString> LogResult<I> for Result<
     }
 }
 
-#[async_trait::async_trait]
 pub trait LogFutResult<I: Interactor> {
     type Result;
     async fn log(self, int: &I) -> Self::Result;
 }
 
-#[async_trait::async_trait]
 impl<
-        I: Sync + Interactor,
-        Fut: Send + std::future::Future<Output = Result<T, E>>,
-        T: Send,
-        E: Send + ToString,
-    > LogFutResult<I> for Fut
+    I: Sync + Interactor,
+    Fut: Send + std::future::Future<Output = Result<T, E>>,
+    T: Send,
+    E: Send + ToString,
+> LogFutResult<I> for Fut
 {
     type Result = Result<T, E>;
     async fn log(self, int: &I) -> Self::Result {
