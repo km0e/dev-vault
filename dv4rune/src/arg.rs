@@ -14,7 +14,7 @@ pub struct Cli {
     pub directory: PathBuf,
     #[arg(short, long)]
     pub config: Option<PathBuf>,
-    #[arg(short = 'b', long, default_value = "$directory/.cache")]
+    #[arg(short = 'b', long, help = "default is $directory/.cache")]
     pub dbpath: Option<PathBuf>,
     #[arg(short = 'n', long, default_value = "false")]
     pub dry_run: bool,

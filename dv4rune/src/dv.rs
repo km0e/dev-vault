@@ -12,7 +12,7 @@ use crate::{
     cache::SqliteCache,
     interactor::TermInteractor,
     multi::{Context, action},
-    utils::{LogResult, field, obj_take2, obj2, value2},
+    utils::{LogFutResult, LogResult, field, obj_take2, obj2, value2},
 };
 use support::Result as LRes;
 
@@ -166,6 +166,7 @@ impl Dv {
         let b = this.cache.get(id, "").await?;
         let res = b.is_none()//not cached
         && {
+            info!("once {}", id);
             let res: LRes<bool> = rune::from_value(
                 f.call::<_, runtime::Future>(())
                     .into_result()?
@@ -173,12 +174,10 @@ impl Dv {
                     .await
                     .into_result()?,
             )?;
-            res? //action success
-            && !this.dry_run//not dry run
-            && {
+            if !this.dry_run {
                 this.cache.set(id, "", 0).await?;
-                true
             }
+            res?
         };
         action!(this, res, "once {}", id);
         Ok(res)
@@ -198,6 +197,7 @@ impl Dv {
             dst_uid,
             dst_path.as_ref(),
         )
+        .log(&this.interactor)
         .await
     }
 }

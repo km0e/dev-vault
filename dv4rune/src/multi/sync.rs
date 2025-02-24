@@ -30,154 +30,150 @@ pub async fn sync(
     let src = ctx.get_user(src_uid).await?;
     let dst = ctx.get_user(dst_uid).await?;
 
-    let copy_file = async |src_path: &str, dst_path: &str| -> LRes<bool> {
-        let res = dst.check_file(dst_path).await;
-        let res = match res {
-            Err(e) if e.is_not_found() => {
-                if ctx.dry_run {
-                    true
-                } else {
-                    if src.hid != dst.hid {
-                        let mut src = src
-                            .open(src_path, OpenFlags::READ)
-                            .log(ctx.interactor)
-                            .await?;
-                        let mut dst = dst
-                            .open(dst_path, OpenFlags::WRITE | OpenFlags::CREATE)
-                            .log(ctx.interactor)
-                            .await?;
-                        tokio::io::copy(&mut src, &mut dst)
-                            .log(ctx.interactor)
-                            .await?;
-                    } else {
-                        let main = if src.is_system { src } else { dst };
-                        main.copy(src_path, dst_path).log(ctx.interactor).await?;
-                    }
-                    let (dst_path, fa) = dst.check_file(dst_path).await?;
+    #[derive(Default)]
+    struct CopyItem {
+        src_path: String,
+        dst_path: String,
+        skip: bool,
+        reverse: bool,
+        ts: Option<i64>,
+    }
 
-                    let Some(ts) = fa.mtime else {
-                        Err(rune::support::Error::msg("get version fail"))?
-                    };
-
-                    let ts = ts as i64;
-
-                    ctx.cache
-                        .set(dst_uid, &dst_path, ts)
-                        .log(ctx.interactor)
-                        .await?;
-
-                    true
-                }
+    impl CopyItem {
+        fn new(src_path: String, dst_path: String) -> Self {
+            Self {
+                src_path,
+                dst_path,
+                ..Default::default()
             }
+        }
+        fn ts(mut self, ts: i64) -> Self {
+            self.ts = Some(ts);
+            self
+        }
+        fn skip(mut self) -> Self {
+            self.skip = true;
+            self
+        }
+        fn reverse(mut self) -> Self {
+            self.reverse = true;
+            self
+        }
+    }
+
+    let copy_file = async |src_path: String, dst_path: String| -> LRes<CopyItem> {
+        let res = dst.check_file(&dst_path).await;
+        let res = match res {
+            Err(e) if e.is_not_found() => CopyItem::new(src_path, dst_path),
             Ok((dst_path, fa)) => {
                 let Some(ts) = fa.mtime else {
                     Err(rune::support::Error::msg("get version fail"))?
                 };
-
                 let ts = ts as i64;
-
                 let cache_ts = ctx
                     .cache
                     .get(dst_uid, &dst_path)
                     .log(ctx.interactor)
                     .await?;
+                let mut item = CopyItem::new(src_path, dst_path).reverse();
                 if cache_ts.is_some_and(|v| v == ts) {
-                    false
-                } else if ctx.dry_run {
-                    true
-                } else {
-                    if src.hid != dst.hid {
-                        let mut src = src
-                            .open(src_path, OpenFlags::READ)
-                            .log(ctx.interactor)
-                            .await?;
-                        let mut dst = dst
-                            .open(&dst_path, OpenFlags::WRITE | OpenFlags::CREATE)
-                            .log(ctx.interactor)
-                            .await?;
-                        tokio::io::copy(&mut dst, &mut src)
-                            .log(ctx.interactor)
-                            .await?;
-                    } else {
-                        let main = if src.is_system { src } else { dst };
-                        main.copy(&dst_path, src_path).log(ctx.interactor).await?;
-                    }
-                    ctx.cache
-                        .set(dst_uid, &dst_path, ts)
-                        .log(ctx.interactor)
-                        .await?;
-                    true
+                    item = item.skip();
+                } else if !ctx.dry_run {
+                    item = item.ts(ts);
                 }
+                item
             }
             Err(e) => Err(e)?,
         };
         Ok(res)
     };
     let res = src.check_path(src_path).log(ctx.interactor).await?;
-    match res {
+    let copy_items = match res {
         CheckInfo::Dir(di) => {
             if !dst_path.ends_with('/') {
                 dst_path.push('/');
             }
+            let mut copy_items = Vec::new();
+            let src_path = di.path;
             if di.files.is_empty() {
                 let di = dst.check_dir(&dst_path).await?;
-                let mut success = false;
-                let mut src_path = src_path.to_string();
-                let mut dst_path = di.path;
-                let dst_len = dst_path.len();
-                let src_len = src_path.len();
+                let dst_path = di.path;
                 for Metadata { path, ts } in di.files {
-                    dst_path.truncate(dst_len);
-                    dst_path.push_str(&path);
-                    src_path.truncate(src_len);
-                    src_path.push_str(&path);
-                    let res = if ctx.dry_run {
-                        true
-                    } else {
-                        if src.hid != dst.hid {
-                            let mut src = src
-                                .open(&src_path, OpenFlags::READ)
-                                .log(ctx.interactor)
-                                .await?;
-                            let mut dst = dst
-                                .open(&dst_path, OpenFlags::WRITE | OpenFlags::CREATE)
-                                .log(ctx.interactor)
-                                .await?;
-                            tokio::io::copy(&mut dst, &mut src)
-                                .log(ctx.interactor)
-                                .await?;
-                        } else {
-                            let main = if src.is_system { src } else { dst };
-                            main.copy(&dst_path, &src_path).log(ctx.interactor).await?;
-                        }
-                        ctx.cache
-                            .set(dst_uid, &dst_path, ts)
-                            .log(ctx.interactor)
-                            .await?;
-
-                        true
-                    };
-                    success |= res;
+                    let dst_path = format!("{}{}", dst_path, path);
+                    let src_path = format!("{}{}", src_path, path);
+                    copy_items.push(CopyItem::new(src_path, dst_path).ts(ts).reverse());
                 }
-                Ok(success)
             } else {
-                let mut success = false;
-                let mut src_path = src_path.to_string();
-                let dst_len = dst_path.len();
-                let src_len = src_path.len();
                 for Metadata { path, .. } in di.files {
-                    dst_path.truncate(dst_len);
-                    dst_path.push_str(&path);
-                    src_path.truncate(src_len);
-                    src_path.push_str(&path);
-                    let res = copy_file(&src_path, &dst_path).await?;
-                    success |= res;
+                    let dst_path = format!("{}{}", dst_path, path);
+                    let src_path = format!("{}{}", src_path, path);
+                    let res = copy_file(src_path, dst_path).await?;
+                    copy_items.push(res);
                 }
-                Ok(success)
             }
+            copy_items
         }
-        CheckInfo::File(m) => copy_file(&m.path, &dst_path).await,
+        CheckInfo::File(m) => {
+            vec![copy_file(m.path, dst_path).await?]
+        }
+    };
+    let mut res = false;
+    for CopyItem {
+        src_path,
+        mut dst_path,
+        skip,
+        reverse,
+        ts,
+    } in copy_items
+    {
+        if !ctx.dry_run {
+            if src.hid != dst.hid {
+                let mut src = src.open(&src_path, OpenFlags::READ).await?;
+                let mut dst = dst
+                    .open(&dst_path, OpenFlags::WRITE | OpenFlags::CREATE)
+                    .await?;
+                if reverse {
+                    (src, dst) = (dst, src);
+                }
+                tokio::io::copy(&mut src, &mut dst).await?;
+            } else {
+                //FIX:right permissions
+                let main = if src.is_system { src } else { dst };
+
+                if reverse {
+                    main.copy(&dst_path, &src_path)
+                } else {
+                    main.copy(&src_path, &dst_path)
+                }
+                .await?
+            }
+            let ts = match ts {
+                Some(ts) => ts,
+                None => {
+                    let (p, fa) = dst.check_file(&dst_path).await?;
+                    dst_path = p;
+                    fa.mtime
+                        .ok_or_else(|| rune::support::Error::msg("get version fail"))?
+                        as i64
+                }
+            };
+            ctx.cache
+                .set(dst_uid, &dst_path, ts)
+                .log(ctx.interactor)
+                .await?;
+        }
+        action!(
+            ctx,
+            !skip,
+            "copy {}:{} -> {}:{}",
+            src_uid,
+            &src_path,
+            dst_uid,
+            &dst_path
+        );
+        res |= !skip;
     }
+    Ok(res)
 }
 
 #[cfg(test)]

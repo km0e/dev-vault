@@ -11,7 +11,7 @@ pub struct Context<'a> {
 }
 
 macro_rules! action {
-    ($ctx:ident, $suc:ident, $fmt:literal, $($arg:tt)*) => {
+    ($ctx:ident, $suc:expr, $fmt:literal, $($arg:tt)*) => {
         $ctx.interactor.log(&format!(concat!("[{}] {} ",$fmt), if $ctx.dry_run { "n" } else { "a" }, if $suc { "exec" } else { "skip" }, $($arg)*)).await;
     };
 }
