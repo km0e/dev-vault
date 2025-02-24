@@ -24,6 +24,7 @@ async fn main() -> rune::support::Result<()> {
         .init();
 
     let args = arg::Cli::parse();
+    let dbpath = args.dbpath.unwrap_or_else(|| args.directory.join(".cache"));
 
     let m = dv::module()?;
 
@@ -62,12 +63,9 @@ async fn main() -> rune::support::Result<()> {
     let output = vm
         .execute(
             [args.entry.as_str()],
-            std::iter::once(rune::to_value(dv::Dv::new(
-                args.directory.join(".cache"),
-                args.dry_run,
-            ))?)
-            .chain(rargs)
-            .collect::<Vec<_>>(),
+            std::iter::once(rune::to_value(dv::Dv::new(dbpath, args.dry_run))?)
+                .chain(rargs)
+                .collect::<Vec<_>>(),
         )?
         .async_complete()
         .await

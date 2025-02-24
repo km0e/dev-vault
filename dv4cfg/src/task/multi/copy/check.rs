@@ -9,7 +9,7 @@ use tracing::{debug, info, trace};
 pub struct CopyItem<'a, 'b> {
     pub src: PathDetail<'a, 'b>,
     pub dst: PathDetail<'a, 'b>,
-    pub version: u64,
+    pub version: i64,
 }
 
 pub struct PathDetail<'a, 'b> {
@@ -29,7 +29,7 @@ impl<'a, 'b> PathDetail<'a, 'b> {
 async fn check_file<'a, I: ContextImpl>(
     dst_uid: &str,
     dst: &PathDetail<'a, '_>,
-    src_ts: u64,
+    src_ts: i64,
     context: &'a Context<I>,
 ) -> Result<bool> {
     let cache = context.get_cache();

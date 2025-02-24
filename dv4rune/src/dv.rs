@@ -183,6 +183,23 @@ impl Dv {
         action!(this, res, "once {}", id);
         Ok(res)
     }
+    #[rune::function(path = Self::sync)]
+    async fn sync(
+        this: Ref<Self>,
+        src_uid: Ref<str>,
+        src_path: Ref<str>,
+        dst_uid: Ref<str>,
+        dst_path: Ref<str>,
+    ) -> LRes<bool> {
+        crate::multi::sync(
+            &this.context(),
+            src_uid,
+            src_path,
+            dst_uid,
+            dst_path.as_ref(),
+        )
+        .await
+    }
 }
 
 pub fn module() -> Result<rune::Module, rune::ContextError> {
@@ -196,5 +213,6 @@ pub fn module() -> Result<rune::Module, rune::ContextError> {
     m.function_meta(Dv::auto)?;
     m.function_meta(Dv::exec)?;
     m.function_meta(Dv::once)?;
+    m.function_meta(Dv::sync)?;
     Ok(m)
 }

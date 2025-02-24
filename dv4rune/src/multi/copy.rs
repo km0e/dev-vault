@@ -17,7 +17,7 @@ async fn check_copy_file(
     src_path: &str,
     dst_uid: &str,
     dst_path: &str,
-    ts: u64,
+    ts: i64,
 ) -> LRes<bool> {
     let dst = ctx.get_user(dst_uid).await?;
     let cache = ctx.cache.get(dst_uid, dst_path).log(ctx.interactor).await?;
@@ -104,7 +104,7 @@ pub async fn copy(
     let src_uid = src_uid.as_ref();
     let dst_uid = dst_uid.as_ref();
     let src_path = src_path.as_ref();
-    let dst_path = dst_path.into();
+    let dst_path: String = dst_path.into();
     if src_path.is_empty() {
         ctx.interactor.log("src_path is empty").await;
     }

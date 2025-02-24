@@ -6,7 +6,7 @@ use snafu::whatever;
 #[cfg(feature = "path-home")]
 use std::path::PathBuf;
 
-use std::{env, path::Path};
+use std::{env, os::unix::fs::MetadataExt, path::Path};
 use systemd::Systemd;
 use tracing::{trace, warn};
 
@@ -144,13 +144,7 @@ impl UserImpl for This {
                 if metadata.is_dir() {
                     continue;
                 }
-                let Ok(modified) = metadata.modified() else {
-                    continue;
-                };
-                let Ok(modified) = modified.duration_since(std::time::UNIX_EPOCH) else {
-                    continue;
-                };
-                let modified = modified.as_secs();
+                let modified = metadata.mtime();
                 let Ok(rel_path) = file_path.strip_prefix(path2) else {
                     continue;
                 };
@@ -169,16 +163,7 @@ impl UserImpl for This {
             let Err(e) = std::fs::copy(src, dst) else {
                 break Ok(());
             };
-            if e.kind() != std::io::ErrorKind::NotFound || {
-                #[cfg(debug_assertions)]
-                {
-                    Path::new(src).exists()
-                }
-                #[cfg(not(debug_assertions))]
-                {
-                    true
-                }
-            } {
+            if e.kind() != std::io::ErrorKind::NotFound {
                 break Err(e);
             }
             let parent = Path::new(dst).parent().unwrap();

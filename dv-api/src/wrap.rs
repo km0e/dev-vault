@@ -82,7 +82,7 @@ impl User {
             })
         } else {
             let ts = match fa.mtime {
-                Some(time) => time as u64,
+                Some(time) => time as i64,
                 None => whatever!("{path} mtime"),
             };
             CheckInfo::File(Metadata {

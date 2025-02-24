@@ -1,6 +1,7 @@
 use snafu::Snafu;
+use strum::EnumIs;
 
-#[derive(Debug, Snafu)]
+#[derive(Debug, Snafu, EnumIs)]
 #[snafu(visibility(pub))]
 pub enum Error {
     NotFound,

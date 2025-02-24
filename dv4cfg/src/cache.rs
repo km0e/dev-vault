@@ -29,11 +29,11 @@ impl SqliteCache {
 }
 
 impl SqliteCache {
-    pub async fn get(&self, hid: &str, path: &str) -> Result<Option<u64>> {
+    pub async fn get(&self, hid: &str, path: &str) -> Result<Option<i64>> {
         let row = self.conn.lock().await.query_row(
             "SELECT version FROM cache WHERE device = ? AND path = ?",
             [hid, path],
-            |row| row.get::<_, u64>(0),
+            |row| row.get::<_, i64>(0),
         );
         match row {
             Ok(fs) => Ok(Some(fs)),
@@ -41,7 +41,7 @@ impl SqliteCache {
             Err(e) => Err(e),
         }
     }
-    pub async fn set(&self, hid: &str, path: &str, version: u64) -> Result<()> {
+    pub async fn set(&self, hid: &str, path: &str, version: i64) -> Result<()> {
         info!("cache set: {} {} {}", hid, path, version);
         self.conn
             .lock()
