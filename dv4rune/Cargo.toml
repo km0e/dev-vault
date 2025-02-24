@@ -2,6 +2,7 @@
 name = "dv4rune"
 version = "0.1.0"
 edition = "2024"
+repository = "https://github.com/km0e/dev-vault.git"
 
 [dependencies]
 dv-api = { path = "../dv-api", features = ["full"] }
