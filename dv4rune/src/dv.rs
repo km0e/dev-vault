@@ -46,7 +46,7 @@ impl Dv {
     }
 }
 impl Dv {
-    #[rune::function(path = Self::add_local)]
+    #[rune::function(path = Self::add_current)]
     async fn add_current(mut this: Mut<Self>, id: Ref<str>, mut user: Mut<Object>) -> LRes<()> {
         let id = id.as_ref();
         use dv_api::LocalConfig;

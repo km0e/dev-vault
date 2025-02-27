@@ -162,14 +162,16 @@ pub async fn sync(
                 .log(ctx.interactor)
                 .await?;
         }
+        let (src_uid, src_path, dst_uid, dst_path) = if reverse {
+            (dst_uid, &dst_path, src_uid, &src_path)
+        } else {
+            (src_uid, &src_path, dst_uid, &dst_path)
+        };
         action!(
             ctx,
             !skip,
-            "copy {}:{} -> {}:{}",
-            src_uid,
-            &src_path,
-            dst_uid,
-            &dst_path
+            "{}",
+            format!("copy {}:{} -> {}:{}", src_uid, src_path, dst_uid, dst_path)
         );
         res |= !skip;
     }

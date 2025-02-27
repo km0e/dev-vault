@@ -1,8 +1,16 @@
 [package]
 name = "dv4rune"
 version = "0.1.0"
-edition = "2024"
-repository = "https://github.com/km0e/dev-vault.git"
+description = "a rune-based command line tool that provides abstract user (device) interoperability"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[package.metadata.wix]
+upgrade-guid = "F5B8D690-7A05-4CDA-8FAC-AE3912689AFC"
+path-guid = "ED96C019-3206-4F56-8EA2-22C3F671E851"
+license = false
+eula = false
 
 [dependencies]
 dv-api = { path = "../dv-api", features = ["full"] }
@@ -17,8 +25,8 @@ rune = "0.13.4"
 rune-modules = "0.13.4"
 rusqlite = "0.33.0"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-clap = { version = "4.5.30", features = ["derive"] }
-termion = "4.0.3"
+clap = { version = "4.5.31", features = ["derive"] }
+termion = "4.0.4"
 tokio-fd = "0.3.0"
 
 [dev-dependencies]

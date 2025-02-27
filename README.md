@@ -1,4 +1,11 @@
-# rust-bin
+## dv-api
 
-a simple template for rust bin
-sed -i -E 's/#?PasswordAuthentication (yes|no)/PasswordAuthentication no/' /etc/ssh/sshd_config && exit
+dv-api offers a simple API for executing commands on different devices.
+
+## dv4rune
+
+dv4rune is a CLI tool which uses dv-api to execute commands on different devices.
+
+### Usage
+
+[中文](https://blog.101248.xyz/zh/dv4rune/)
