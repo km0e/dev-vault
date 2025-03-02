@@ -20,7 +20,6 @@ pub async fn manjaro_am(u: &BoxedUser) -> crate::Result<BoxedAm> {
                 .into_iter(),
             ),
         })
-        .await?
         .wait()
         .await?;
 

@@ -22,7 +22,7 @@ impl Am for Pacman {
             program: "sh",
             input: Box::new(input),
         };
-        let pkgs = u.exec(cmd).await?.output().await?;
+        let pkgs = u.exec(cmd).output().await?;
         if pkgs.is_empty() {
             return Ok(false);
         }

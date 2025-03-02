@@ -1,6 +1,5 @@
 use crate::{cache::SqliteCache, interactor::TermInteractor};
 use dv_api::{User, process::Interactor};
-use rune::support::Result as LRes;
 use std::collections::HashMap;
 
 pub struct Context<'a> {
@@ -55,3 +54,12 @@ mod exec;
 pub use exec::exec;
 mod sync;
 pub use sync::sync;
+mod util;
+
+mod dev {
+    pub use super::Context;
+    pub use super::util::*;
+    pub use crate::utils::LogFutResult;
+    pub use dv_api::process::Interactor;
+    pub use rune::support::Result as LRes;
+}

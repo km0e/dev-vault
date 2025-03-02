@@ -1,14 +1,9 @@
+use super::dev::*;
 use dv_api::{
     User,
-    fs::{CheckInfo, DirInfo, Metadata, OpenFlags},
-    process::Interactor,
+    fs::{CheckInfo, DirInfo, Metadata},
 };
-use rune::support::Result as LRes;
 use tracing::{debug, info, trace};
-
-use crate::utils::LogFutResult;
-
-use super::Context;
 
 async fn check_copy_file(
     ctx: &Context<'_>,
@@ -31,22 +26,9 @@ async fn check_copy_file(
     } else if ctx.dry_run {
         true
     } else {
-        if src.hid != dst.hid {
-            let mut src = src
-                .open(src_path, OpenFlags::READ)
-                .log(ctx.interactor)
-                .await?;
-            let mut dst = dst
-                .open(dst_path, OpenFlags::WRITE | OpenFlags::CREATE)
-                .log(ctx.interactor)
-                .await?;
-            tokio::io::copy(&mut src, &mut dst)
-                .log(ctx.interactor)
-                .await?;
-        } else {
-            let main = if src.is_system { src } else { dst };
-            main.copy(src_path, dst_path).log(ctx.interactor).await?;
-        }
+        try_copy(src, src_uid, src_path, dst, dst_uid, dst_path)
+            .log(ctx.interactor)
+            .await?;
         ctx.cache
             .set(dst_uid, dst_path, ts)
             .log(ctx.interactor)
@@ -131,8 +113,9 @@ pub async fn copy(
             );
         };
         match info {
-            CheckInfo::Dir(dir) => {
+            CheckInfo::Dir(mut dir) => {
                 dst_path.push('/');
+                dir.path.push('/');
                 check_copy_dir(ctx, src, src_uid, dir.path, dst_uid, dst_path, dir.files).await
             }
             CheckInfo::File(file) => {

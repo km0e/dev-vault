@@ -1,13 +1,6 @@
-use dv_api::{
-    fs::{CheckInfo, Metadata, OpenFlags},
-    process::Interactor,
-};
-use rune::support::Result as LRes;
+use super::dev::*;
+use dv_api::fs::{CheckInfo, Metadata};
 use tracing::trace;
-
-use crate::utils::LogFutResult;
-
-use super::Context;
 
 pub async fn sync(
     ctx: &Context<'_>,
@@ -89,11 +82,14 @@ pub async fn sync(
     };
     let res = src.check_path(src_path).log(ctx.interactor).await?;
     let copy_items = match res {
-        CheckInfo::Dir(di) => {
+        CheckInfo::Dir(mut di) => {
             if !dst_path.ends_with('/') {
                 dst_path.push('/');
             }
             let mut copy_items = Vec::new();
+            if !di.path.ends_with('/') {
+                di.path.push('/');
+            }
             let src_path = di.path;
             if di.files.is_empty() {
                 let di = dst.check_dir(&dst_path).await?;
@@ -127,25 +123,10 @@ pub async fn sync(
     } in copy_items
     {
         if !ctx.dry_run {
-            if src.hid != dst.hid {
-                let mut src = src.open(&src_path, OpenFlags::READ).await?;
-                let mut dst = dst
-                    .open(&dst_path, OpenFlags::WRITE | OpenFlags::CREATE)
-                    .await?;
-                if reverse {
-                    (src, dst) = (dst, src);
-                }
-                tokio::io::copy(&mut src, &mut dst).await?;
+            if reverse {
+                try_copy(dst, dst_uid, &dst_path, src, src_uid, &src_path).await?;
             } else {
-                //FIX:right permissions
-                let main = if src.is_system { src } else { dst };
-
-                if reverse {
-                    main.copy(&dst_path, &src_path)
-                } else {
-                    main.copy(&src_path, &dst_path)
-                }
-                .await?
+                try_copy(src, src_uid, &src_path, dst, dst_uid, &dst_path).await?;
             }
             let ts = match ts {
                 Some(ts) => ts,
@@ -237,6 +218,20 @@ mod tests {
         let dst = dir.child("dst");
         assert!(
             sync(&ctx, "this", "src/", "this", "dst").await.unwrap(),
+            "sync should success"
+        );
+        dst.child("f0").assert("f0");
+        dst.child("f1").assert("f1");
+        cache_assert(&cache, dst.child("f0").path()).await;
+        cache_assert(&cache, dst.child("f1").path()).await;
+    }
+    #[tokio::test]
+    async fn test_src_to_dst2() {
+        let (int, cache, users, dir) = tenv(&[("f0", "f0"), ("f1", "f1")], &[]).await;
+        let ctx = Context::new(false, &cache, &int, &users);
+        let dst = dir.child("dst");
+        assert!(
+            sync(&ctx, "this", "src", "this", "dst").await.unwrap(),
             "sync should success"
         );
         dst.child("f0").assert("f0");

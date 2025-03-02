@@ -6,6 +6,7 @@ mod command;
 mod dev_info;
 pub use dev_info::Os;
 mod dev {
+    pub use crate::process::PtyProcessConsumer;
     pub use crate::{Result, params::*, user::*};
     pub use async_trait::async_trait;
 }

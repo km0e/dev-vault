@@ -1,3 +1,5 @@
+use snafu::whatever;
+
 use super::dev::*;
 
 #[derive(Default)]
@@ -14,9 +16,15 @@ impl<U: UserImpl + Send + Sync> CommandUtil<U> for Manjaro {
         self.systemd.reload(user, name).await
     }
     //file utils
-    async fn copy(&self, dev: &U, src: &str, dst: &str) -> Result<i32> {
-        dev.exec(["cp", src, dst].as_ref().into())
-            .await?
+    async fn copy(&self, dev: &U, src_path: &str, dst_user: &str, dst_path: &str) -> Result<i32> {
+        let ec = dev
+            .exec(["cp", src_path, dst_path].as_ref().into())
+            .wait()
+            .await?;
+        if ec != 0 {
+            whatever!("exec cp {} -> {} fail", src_path, dst_path);
+        }
+        dev.exec(["chown", dst_user, dst_path].as_ref().into())
             .wait()
             .await
     }

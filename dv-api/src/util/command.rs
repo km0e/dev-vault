@@ -19,7 +19,13 @@ pub trait CommandUtil<U: UserImpl + Send + Sync> {
         whatever!("reload command unimplemented")
     }
     //file utils
-    async fn copy(&self, _user: &U, _src: &str, _dst: &str) -> crate::Result<i32> {
+    async fn copy(
+        &self,
+        _user: &U,
+        _src_path: &str,
+        _dst_name: &str,
+        _dst_path: &str,
+    ) -> crate::Result<i32> {
         whatever!("copy command unimplemented")
     }
 }

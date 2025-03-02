@@ -158,19 +158,27 @@ impl UserImpl for This {
             whatever!("{} not a directory", path)
         }
     }
-    async fn copy(&self, src: &str, dst: &str) -> Result<()> {
-        Ok(loop {
-            let Err(e) = std::fs::copy(src, dst) else {
-                break Ok(());
-            };
-            if e.kind() != std::io::ErrorKind::NotFound {
-                break Err(e);
-            }
-            let parent = Path::new(dst).parent().unwrap();
-            if let Err(e) = std::fs::create_dir_all(parent) {
-                break Err(e);
-            }
-        }?)
+    async fn copy(&self, src_path: &str, _: &str, dst_path: &str) -> Result<()> {
+        #[cfg(feature = "path-home")]
+        let src2 = self.expand_home(src_path);
+        #[cfg(not(feature = "path-home"))]
+        let src2 = Path::new(src_path);
+
+        #[cfg(feature = "path-home")]
+        let dst2 = self.expand_home(dst_path);
+        #[cfg(not(feature = "path-home"))]
+        let dst2 = Path::new(dst_path);
+
+        let Err(e) = std::fs::copy(&src2, &dst2) else {
+            return Ok(());
+        };
+        if e.kind() != std::io::ErrorKind::NotFound {
+            Err(e)?;
+        }
+        let parent = dst2.parent().unwrap();
+        std::fs::create_dir_all(parent)?;
+        std::fs::copy(&src2, &dst2)?;
+        Ok(())
     }
     async fn auto(&self, name: &str, action: &str) -> Result<()> {
         match action {

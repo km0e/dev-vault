@@ -53,7 +53,7 @@ impl User {
         &self,
         path: impl Into<&'a camino::Utf8Path>,
     ) -> crate::Result<Cow<'a, camino::Utf8Path>> {
-        let path = path.into();
+        let path: &'a camino::Utf8Path = path.into();
         let path = if path.has_root() {
             path.into()
         } else {
@@ -105,11 +105,12 @@ impl User {
             files: metadata,
         })
     }
-    pub async fn copy(&self, src: &str, dst: &str) -> Result<()> {
+    pub async fn copy(&self, src_path: &str, dst: &str, dst_path: &str) -> Result<()> {
         self.inner
             .copy(
-                self.normalize2(src)?.as_str(),
-                self.normalize2(dst)?.as_str(),
+                self.normalize2(src_path)?.as_str(),
+                dst,
+                self.normalize2(dst_path)?.as_str(),
             )
             .await
     }

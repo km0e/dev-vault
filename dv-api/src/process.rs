@@ -1,4 +1,5 @@
-#[async_trait::async_trait]
+use crate::Result;
+#[async_trait]
 // TODO:maybe better to use a trait for the sync method
 pub trait PtyProcessImpl {
     async fn window_change(
@@ -7,17 +8,33 @@ pub trait PtyProcessImpl {
         height: u32,
         pix_width: u32,
         pix_height: u32,
-    ) -> crate::Result<()>;
-    async fn wait(&mut self) -> crate::Result<i32>;
-    async fn output(&mut self) -> crate::Result<Vec<u8>>;
+    ) -> Result<()>;
+    async fn wait(&mut self) -> Result<i32>;
+    async fn output(&mut self) -> Result<Vec<u8>>;
     async fn sync(
         &mut self,
         reader: Box<dyn tokio::io::AsyncRead + Unpin + Send>,
         writer: Box<dyn tokio::io::AsyncWrite + Unpin + Send>,
-    ) -> crate::Result<i32>;
+    ) -> Result<i32>;
 }
 
 pub type BoxedPtyProcess = Box<dyn PtyProcessImpl + Unpin + Send + Sync>;
+
+#[async_trait]
+pub trait PtyProcessConsumer {
+    async fn wait(self) -> Result<i32>;
+    async fn output(self) -> Result<Vec<u8>>;
+}
+
+#[async_trait]
+impl<T: Future<Output = Result<BoxedPtyProcess>> + Send> PtyProcessConsumer for T {
+    async fn wait(self) -> Result<i32> {
+        self.await?.wait().await
+    }
+    async fn output(self) -> Result<Vec<u8>> {
+        self.await?.output().await
+    }
+}
 
 pub enum Script<'a, 'b> {
     Whole(&'a str),

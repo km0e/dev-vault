@@ -5,7 +5,7 @@ use russh::client;
 use russh_sftp::{client::SftpSession, protocol::StatusCode};
 use snafu::whatever;
 use tokio::io::AsyncWriteExt;
-use tracing::warn;
+use tracing::{info, warn};
 mod config;
 pub use config::SSHConfig;
 mod error;
@@ -108,10 +108,13 @@ impl UserImpl for SSHSession {
             whatever!("{path} is a {:?}", metadata.file_type());
         }
     }
-    async fn copy(&self, src: &str, dst: &str) -> crate::Result<()> {
-        let ec = self.command_util.copy(self, src, dst).await?;
+    async fn copy(&self, src_path: &str, dst: &str, dst_path: &str) -> crate::Result<()> {
+        let ec = self
+            .command_util
+            .copy(self, src_path, dst, dst_path)
+            .await?;
         if ec != 0 {
-            whatever!("exec cp {} -> {} fail", src, dst);
+            whatever!("exec cp {} -> {} fail", src_path, dst_path);
         }
         Ok(())
     }
@@ -159,7 +162,7 @@ impl UserImpl for SSHSession {
                     )
                     .await;
                 if let Ok(mut file) = res {
-                    file.write_all(format!("trap '{{ rm -f -- {}}}' EXIT;", name).as_bytes())
+                    file.write_all(format!("trap '{{ rm -f -- {};}}' EXIT;", name).as_bytes())
                         .await?;
                     for blk in input {
                         file.write_all(blk.as_bytes()).await?;
@@ -171,7 +174,9 @@ impl UserImpl for SSHSession {
                 retry -= 1;
                 name.clear();
             }
-            channel.exec(true, format!("{} {}", program, name)).await?;
+            let cmd = format!("{} {}", program, name);
+            info!("exec {}", cmd);
+            channel.exec(true, cmd).await?;
         } else {
             channel.exec(true, command).await?;
         }
