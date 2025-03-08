@@ -178,7 +178,7 @@ mod tests {
         src: &[(&str, &str)],
         dst: &[(&str, &str)],
     ) -> (TermInteractor, SqliteCache, HashMap<String, User>, TempDir) {
-        let int = TermInteractor::default();
+        let int = TermInteractor::new().unwrap();
         let cache = SqliteCache::memory();
         let dir = TempDir::new().unwrap();
         let user = LocalConfig {

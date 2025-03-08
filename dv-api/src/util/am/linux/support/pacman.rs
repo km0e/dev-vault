@@ -1,5 +1,4 @@
-use rustix::path::Arg;
-use snafu::whatever;
+use crate::whatever;
 use tracing::info;
 
 use super::dev::*;
@@ -26,7 +25,6 @@ impl Am for Pacman {
         if pkgs.is_empty() {
             return Ok(false);
         }
-        let pkgs = pkgs.to_string_lossy();
         info!("pkgs[{}] need to be installed", pkgs);
         let cmd = Script::Split {
             program: "pacman",
@@ -36,8 +34,8 @@ impl Am for Pacman {
                     .chain(pkgs.split_whitespace()),
             ),
         };
-        let mut pp = u.exec(cmd).await?;
-        let ec = interactor.ask(&mut pp).await?;
+        let pp = u.exec(cmd).await?;
+        let ec = interactor.ask(pp).await?;
         if ec != 0 {
             whatever!("unexpected exit status {}", ec);
         }

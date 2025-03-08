@@ -38,7 +38,7 @@ impl Dv {
             devices: HashMap::new(),
             users: HashMap::new(),
             cache: SqliteCache::new(path),
-            interactor: Default::default(),
+            interactor: TermInteractor::new().unwrap(),
         }
     }
     fn context(&self) -> Context<'_> {
@@ -161,12 +161,18 @@ impl Dv {
         crate::multi::auto(&this.context(), uid, service, action).await
     }
     #[rune::function(path = Self::once)]
-    async fn once(this: Ref<Self>, id: Ref<str>, f: runtime::Function) -> LRes<bool> {
+    async fn once(
+        this: Ref<Self>,
+        id: Ref<str>,
+        key: Ref<str>,
+        f: runtime::Function,
+    ) -> LRes<bool> {
         let id = id.as_ref();
-        let b = this.cache.get(id, "").await?;
+        let key = key.as_ref();
+        let b = this.cache.get(id, key).await?;
         let res = b.is_none()//not cached
         && {
-            info!("once {}", id);
+            info!("once {} {}", id,key);
             let res: LRes<bool> = rune::from_value(
                 f.call::<_, runtime::Future>(())
                     .into_result()?
@@ -174,12 +180,13 @@ impl Dv {
                     .await
                     .into_result()?,
             )?;
+            let res= res?;
             if !this.dry_run {
-                this.cache.set(id, "", 0).await?;
+                this.cache.set(id, key, 0).await?;
             }
-            res?
+            res
         };
-        action!(this, res, "once {}", id);
+        action!(this, res, "once {} {}", id, key);
         Ok(res)
     }
     #[rune::function(path = Self::sync)]
@@ -200,6 +207,12 @@ impl Dv {
         .log(&this.interactor)
         .await
     }
+    #[rune::function(path = Self::refresh)]
+    async fn refresh(this: Ref<Self>, id: Ref<str>, key: Ref<str>) -> LRes<bool> {
+        this.cache.del(&id, &key).await?;
+        action!(this, true, "refresh {} {}", id.as_ref(), key.as_ref());
+        Ok(true)
+    }
 }
 
 pub fn module() -> Result<rune::Module, rune::ContextError> {
@@ -214,5 +227,6 @@ pub fn module() -> Result<rune::Module, rune::ContextError> {
     m.function_meta(Dv::exec)?;
     m.function_meta(Dv::once)?;
     m.function_meta(Dv::sync)?;
+    m.function_meta(Dv::refresh)?;
     Ok(m)
 }

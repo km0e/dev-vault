@@ -1,13 +1,30 @@
-use std::io::Write;
+use std::{io::Read, os::fd::AsFd};
 
-use dv_api::process::{BoxedPtyProcess, Interactor};
+use crossterm::terminal;
+use dv_api::process::{BoxedPtyReader, BoxedPtyWriter, Interactor};
 
-use termion::{raw::IntoRawMode, terminal_size};
-use tokio::sync::Mutex;
+use resplus::flog;
+use tokio::{
+    io::{AsyncWriteExt, copy},
+    sync::Mutex,
+};
+use tracing::{debug, trace};
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct TermInteractor {
     excl: Mutex<()>,
+}
+
+impl TermInteractor {
+    pub fn new() -> std::io::Result<Self> {
+        use rustix::fs;
+        let stdin = std::io::stdin();
+        let fd = stdin.as_fd();
+        fs::fcntl_setfl(fd, fs::fcntl_getfl(fd)? | fs::OFlags::NONBLOCK)?;
+        Ok(Self {
+            excl: Mutex::new(()),
+        })
+    }
 }
 
 #[async_trait::async_trait]
@@ -17,16 +34,49 @@ impl Interactor for TermInteractor {
         println!("{}", msg);
     }
     //TODO:more easily error handling
-    async fn ask(&self, p: &mut BoxedPtyProcess) -> dv_api::Result<i32> {
-        let (width, height) = terminal_size()?;
-        p.window_change(width as u32, height as u32, 0, 0).await?;
+    async fn ask(&self, pty: (BoxedPtyWriter, BoxedPtyReader)) -> dv_api::Result<i32> {
+        let (width, height) = terminal::size()?;
+        let (mut tx, mut rx) = pty;
+        tx.window_change(width as u32, height as u32, 0, 0)
+            .await
+            .map_err(dv_api::ErrorSource::Unknown)?;
         #[allow(unused_variables)]
         let g = self.excl.lock().await;
-        let mut raw = std::io::stdout().into_raw_mode()?;
-        raw.flush()?;
-        let stdin = tokio_fd::AsyncFd::try_from(0)?;
-        let stdout = tokio_fd::AsyncFd::try_from(1)?;
-        let ec = p.sync(Box::new(stdin), Box::new(stdout)).await?;
-        Ok(ec)
+        terminal::enable_raw_mode()?;
+        let h = tokio::spawn(async move {
+            debug!("start sync stdin to tx");
+            let mut buf2 = [0; 1024];
+            let mut stdin = std::io::stdin();
+            let r = loop {
+                let n = stdin.read(&mut buf2);
+                debug!("sync stdin to tx {:?}", n);
+                match n {
+                    Ok(0) => break Ok(()),
+                    Ok(n) => {
+                        trace!("sync {} from stdin to tx", n);
+                        tx.write_all(&buf2[..n]).await?;
+                        tx.flush().await?;
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await
+                    }
+                    Err(e) => break Err(e),
+                };
+            };
+            debug!("sync stdin to tx over");
+            r
+        });
+
+        let mut to = tokio::io::stdout();
+        let res = flog!(copy(&mut rx, &mut to)).await;
+        let status = rx.wait().await.unwrap();
+        h.abort();
+        terminal::disable_raw_mode()?;
+        if status == 0 {
+            Ok(0)
+        } else {
+            let es = res.map(|_| status)?;
+            Ok(es)
+        }
     }
 }

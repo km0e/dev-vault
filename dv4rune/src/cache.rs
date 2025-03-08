@@ -71,4 +71,15 @@ impl SqliteCache {
             )
             .map(|_| ())
     }
+    pub async fn del(&self, uid: &str, path: &str) -> Result<()> {
+        info!("cache del: {} {}", uid, path);
+        self.conn
+            .lock()
+            .await
+            .execute(
+                "DELETE FROM cache WHERE device = ? AND path = ?",
+                [uid, path],
+            )
+            .map(|_| ())
+    }
 }

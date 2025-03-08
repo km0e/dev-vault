@@ -2,8 +2,6 @@ use tracing::{info, trace};
 use zbus::Result as ZResult;
 use zbus::{proxy, zvariant::OwnedObjectPath};
 
-use crate::Error;
-
 type EnableUnitFilesReply = (bool, Vec<(String, String, String)>);
 #[proxy(
     interface = "org.freedesktop.systemd1.Manager",
@@ -48,14 +46,6 @@ pub struct Systemd {
     is_system: bool,
     conn: zbus::Connection,
     manager: ManagerProxy<'static>,
-}
-
-impl From<zbus::Error> for Error {
-    fn from(value: zbus::Error) -> Self {
-        Error::Service {
-            message: value.to_string(),
-        }
-    }
 }
 
 impl Systemd {

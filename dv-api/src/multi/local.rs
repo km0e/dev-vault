@@ -1,8 +1,6 @@
-use crate::{Error, wrap::UserCast};
+use crate::{whatever, wrap::UserCast};
 
 use super::dev::*;
-use process::PtyProcess;
-use snafu::whatever;
 #[cfg(feature = "path-home")]
 use std::path::PathBuf;
 
@@ -11,7 +9,6 @@ use systemd::Systemd;
 use tracing::{trace, warn};
 
 mod file;
-mod process;
 mod systemd;
 
 #[derive(Debug)]
@@ -104,17 +101,6 @@ impl This {
     }
 }
 
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Self {
-        match e.kind() {
-            std::io::ErrorKind::NotFound => Error::NotFound,
-            _ => Error::File {
-                message: format!("source: {}", e),
-            },
-        }
-    }
-}
-
 #[async_trait]
 impl UserImpl for This {
     async fn file_attributes(&self, path: &str) -> Result<(String, FileAttributes)> {
@@ -188,10 +174,10 @@ impl UserImpl for This {
         };
         Ok(())
     }
-    async fn exec(&self, command: Script<'_, '_>) -> Result<BoxedPtyProcess> {
+    async fn exec(&self, command: Script<'_, '_>) -> Result<(BoxedPtyWriter, BoxedPtyReader)> {
         trace!("try to exec command");
-        let cmd = PtyProcess::new(command).await?;
-        Ok(cmd.into())
+        let (tx, rx) = openpty_local(command)?;
+        Ok((Box::new(tx), Box::new(rx)))
     }
     async fn open(&self, path: &str, opt: OpenFlags) -> Result<BoxedFile> {
         let path2 = Path::new(path);

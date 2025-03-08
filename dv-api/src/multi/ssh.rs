@@ -1,16 +1,13 @@
-use crate::Error;
+use crate::whatever;
 
 use super::dev::{self, *};
 use russh::client;
 use russh_sftp::{client::SftpSession, protocol::StatusCode};
-use snafu::whatever;
 use tokio::io::AsyncWriteExt;
 use tracing::{info, warn};
 mod config;
 pub use config::SSHConfig;
-mod error;
 mod file;
-mod process;
 
 struct Client {}
 
@@ -44,22 +41,6 @@ impl SSHSession {
             }
         }
         camino::Utf8Path::new(path).into()
-    }
-}
-
-impl From<russh_sftp::client::error::Error> for Error {
-    fn from(e: russh_sftp::client::error::Error) -> Self {
-        match e {
-            russh_sftp::client::error::Error::Status(s) => match s.status_code {
-                StatusCode::NoSuchFile => Error::NotFound,
-                _ => Error::File {
-                    message: format!("source: {}", s.error_message),
-                },
-            },
-            _ => Error::File {
-                message: format!("source: {}", e),
-            },
-        }
     }
 }
 
@@ -105,7 +86,7 @@ impl UserImpl for SSHSession {
             }
             Ok(infos)
         } else {
-            whatever!("{path} is a {:?}", metadata.file_type());
+            whatever!("{path} is a {:?}", metadata.file_type())
         }
     }
     async fn copy(&self, src_path: &str, dst: &str, dst_path: &str) -> crate::Result<()> {
@@ -130,7 +111,7 @@ impl UserImpl for SSHSession {
         }
         Ok(())
     }
-    async fn exec(&self, command: Script<'_, '_>) -> Result<BoxedPtyProcess> {
+    async fn exec(&self, command: Script<'_, '_>) -> Result<(BoxedPtyWriter, BoxedPtyReader)> {
         let channel = self.session.channel_open_session().await?;
         channel
             .request_pty(
@@ -180,7 +161,8 @@ impl UserImpl for SSHSession {
         } else {
             channel.exec(true, command).await?;
         }
-        Ok(channel.into())
+        let (tx, rx) = channel.into_pty();
+        Ok((Box::new(tx), Box::new(rx)))
     }
     async fn open(&self, path: &str, opt: OpenFlags) -> crate::Result<BoxedFile> {
         let open_flags = opt.into();

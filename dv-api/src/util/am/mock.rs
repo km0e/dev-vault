@@ -1,4 +1,4 @@
-use snafu::whatever;
+use crate::whatever;
 
 use super::dev::*;
 

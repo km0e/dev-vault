@@ -3,7 +3,6 @@ use std::fmt::Debug;
 use crate::{
     Result,
     fs::{BoxedFile, FileAttributes, Metadata, OpenFlags},
-    process::{BoxedPtyProcess, Script},
 };
 
 #[async_trait::async_trait]
@@ -14,7 +13,7 @@ pub trait UserImpl {
     async fn copy(&self, src_path: &str, dst: &str, dst_path: &str) -> Result<()>;
     async fn open(&self, path: &str, opt: OpenFlags) -> Result<BoxedFile>;
     async fn auto(&self, name: &str, action: &str) -> Result<()>;
-    async fn exec(&self, command: Script<'_, '_>) -> Result<BoxedPtyProcess>;
+    async fn exec(&self, command: Script<'_, '_>) -> Result<(BoxedPtyWriter, BoxedPtyReader)>;
 }
 
 pub type BoxedUser = Box<dyn UserImpl + Send + Sync>;
@@ -39,4 +38,5 @@ macro_rules! into_boxed_user {
     };
 }
 
+use e4pty::{BoxedPtyReader, BoxedPtyWriter, Script};
 pub(crate) use into_boxed_user;

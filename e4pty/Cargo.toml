@@ -1,0 +1,15 @@
+[package]
+name = "e4pty"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tempfile = "3.17.1"
+
+[target.'cfg(not(windows))'.dependencies]
+rustix-openpty = "0.1.1"

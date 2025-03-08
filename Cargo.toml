@@ -1,5 +1,5 @@
 [workspace]
-members = ["dv-api", "dv4rune"]
+members = ["dv-api", "dv4rune", "e4pty"]
 resolver = "3"
 
 [workspace.package]
@@ -9,14 +9,14 @@ repository = "https://github.com/km0e/dev-vault.git"
 
 [workspace.dependencies]
 tokio = { version = "1.43.0", features = [
-  "fs",
-  "io-std",
-  "sync",
-  "rt-multi-thread",
-  "macros",
+    "fs",
+    "io-std",
+    "sync",
+    "rt-multi-thread",
+    "macros",
 ] }
 tracing = { version = "0.1.41" }
-async-trait = "0.1.86"
+async-trait = "0.1.87"
 snafu = "0.8.5"
 home = { version = "0.5.11" }
 

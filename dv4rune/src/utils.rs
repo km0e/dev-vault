@@ -19,8 +19,8 @@ pub trait LogFutResult<I: Interactor> {
     async fn log(self, int: &I) -> Self::Result;
 }
 
-impl<I: Sync + Interactor, Fut: std::future::Future<Output = Result<T, E>>, T, E: ToString>
-    LogFutResult<I> for Fut
+impl<I: Sync + Interactor, Fut: Future<Output = Result<T, E>>, T, E: ToString> LogFutResult<I>
+    for Fut
 {
     type Result = Result<T, E>;
     async fn log(self, int: &I) -> Self::Result {

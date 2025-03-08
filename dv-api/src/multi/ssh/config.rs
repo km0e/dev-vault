@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
+use resplus::flog;
 use russh::client::{self, AuthResult, Handle};
-use snafu::whatever;
 use tokio::io::AsyncReadExt;
-use tracing::{info, warn};
+use tracing::warn;
 
-use crate::util::Os;
+use crate::{Result, util::Os, whatever};
 
 use super::{Client, SSHSession, dev::*};
 
@@ -29,7 +29,7 @@ impl SSHConfig {
 }
 #[async_trait::async_trait]
 impl UserCast for SSHConfig {
-    async fn cast(self) -> crate::Result<User> {
+    async fn cast(self) -> Result<User> {
         let (h, user) = connect(self.host, self.passwd).await?;
         let mut p = Params::new(user);
         if !self.os.is_unknown() {
@@ -39,9 +39,8 @@ impl UserCast for SSHConfig {
         let home = detect2(&h, &mut p).await?;
         #[cfg(not(feature = "path-home"))]
         detect2(&h, &mut p).await?;
-        let channel = h.channel_open_session().await?;
-        channel.request_subsystem(true, "sftp").await?;
-
+        let channel = flog!(h.channel_open_session()).await?;
+        flog!(channel.request_subsystem(true, "sftp")).await?;
         let sftp = russh_sftp::client::SftpSession::new(channel.into_stream()).await?;
 
         let command_util = (&p).into();
@@ -58,15 +57,19 @@ impl UserCast for SSHConfig {
 }
 
 async fn connect(host: String, passwd: Option<String>) -> Result<(Handle<Client>, String)> {
-    let host_cfg = russh_config::parse_home(&host)?;
+    let host_cfg = flog!(russh_config::parse_home(&host), ..)?; //with host
     let config = client::Config::default();
     let config = Arc::new(config);
     let sh = Client {};
 
-    let mut session =
-        client::connect(config, (host_cfg.host_name.clone(), host_cfg.port), sh).await?;
+    let mut session = flog!(client::connect(
+        config,
+        (host_cfg.host_name.clone(), host_cfg.port),
+        sh
+    ))
+    .await?;
 
-    let mut res = session.authenticate_none(&host_cfg.user).await?;
+    let mut res = flog!(session.authenticate_none(&host_cfg.user)).await?;
     let AuthResult::Failure {
         mut remaining_methods,
     } = res
@@ -80,12 +83,12 @@ async fn connect(host: String, passwd: Option<String>) -> Result<(Handle<Client>
         remaining_methods.contains(&MethodKind::PublicKey),
     ) {
         let kp = keys::load_secret_key(&path, None)?;
-        res = session
-            .authenticate_publickey(
-                &host_cfg.user,
-                keys::PrivateKeyWithHashAlg::new(Arc::new(kp), None),
-            )
-            .await?;
+        let private_key = keys::PrivateKeyWithHashAlg::new(Arc::new(kp), None);
+        res = flog!(
+            session.authenticate_publickey(&host_cfg.user, private_key,),
+            0
+        )
+        .await?;
         let AuthResult::Failure {
             remaining_methods: s,
         } = res
@@ -96,20 +99,19 @@ async fn connect(host: String, passwd: Option<String>) -> Result<(Handle<Client>
         remaining_methods = s;
     }
     if let (Some(passwd), true) = (passwd, remaining_methods.contains(&MethodKind::Password)) {
-        res = session
-            .authenticate_password(&host_cfg.user, passwd)
-            .await?;
+        res = flog!(session.authenticate_password(&host_cfg.user, passwd), 0).await?;
         if res.success() {
             return Ok((session, host_cfg.user));
         }
         warn!("authenticate_password failed");
     }
-    whatever!(
-        "ssh connect {} {} {} failed",
-        host,
-        host_cfg.host_name,
-        host_cfg.user
-    );
+    // Error::whatever!(
+    //     "ssh connect {} {} {} failed",
+    //     host,
+    //     host_cfg.host_name,
+    //     host_cfg.user
+    // );
+    unimplemented!()
 }
 
 #[cfg(feature = "path-home")]
@@ -153,13 +155,12 @@ async fn detect(h: &Handle<Client>, p: &mut Params) -> DetectResult {
     }
 
     #[cfg(feature = "path-home")]
-    let [home, session] = extract(h, "env", &["HOME", "XDG_SESSION_TYPE"]).await?;
+    let [home, session] = flog!(extract(h, "env", &["HOME", "XDG_SESSION_TYPE"])).await?;
 
     #[cfg(not(feature = "path-home"))]
     let [session] = extract(h, "env", &["XDG_SESSION_TYPE"]).await?;
 
     if let Some(session) = session {
-        info!("session: {}", session);
         p.session(session);
     }
     let [os] = extract(

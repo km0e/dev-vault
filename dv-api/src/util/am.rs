@@ -6,10 +6,8 @@ mod linux;
 mod dev {
     pub use super::super::dev::*;
     pub use super::{Am, BoxedAm};
-    pub use crate::{
-        User,
-        process::{DynInteractor, Script},
-    };
+    pub use crate::{User, process::DynInteractor};
+    pub use e4pty::Script;
 }
 use dev::*;
 mod mock;

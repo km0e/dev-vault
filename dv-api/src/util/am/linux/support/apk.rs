@@ -1,5 +1,4 @@
-use rustix::path::Arg;
-use snafu::whatever;
+use crate::whatever;
 
 use super::dev::*;
 
@@ -25,13 +24,12 @@ impl Am for Apk {
         if pkgs.is_empty() {
             return Ok(false);
         }
-        let pkgs = pkgs.to_string_lossy();
         let cmd = Script::Split {
             program: "apk",
             args: Box::new(["add"].into_iter().chain(pkgs.split_whitespace())),
         };
-        let mut pp = u.exec(cmd).await?;
-        let ec = interactor.ask(&mut pp).await?;
+        let pp = u.exec(cmd).await?;
+        let ec = interactor.ask(pp).await?;
         if ec != 0 {
             whatever!("unexpected exit status {}", ec);
         }

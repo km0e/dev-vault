@@ -4,8 +4,8 @@ mod dev {
     pub use super::{BoxedCommandUtil, CommandUtil};
 }
 
+use crate::whatever;
 use mock::MockCommandUtil;
-use snafu::whatever;
 mod linux;
 mod mock;
 

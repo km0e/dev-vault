@@ -1,5 +1,3 @@
-use snafu::whatever;
-
 use super::dev::*;
 
 #[derive(Default)]
@@ -21,8 +19,8 @@ impl<U: UserImpl + Send + Sync> CommandUtil<U> for Manjaro {
             .exec(["cp", src_path, dst_path].as_ref().into())
             .wait()
             .await?;
-        if ec != 0 {
-            whatever!("exec cp {} -> {} fail", src_path, dst_path);
+        if dst_user.is_empty() || ec != 0 {
+            return Ok(ec);
         }
         dev.exec(["chown", dst_user, dst_path].as_ref().into())
             .wait()

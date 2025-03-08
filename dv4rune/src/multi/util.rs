@@ -1,5 +1,5 @@
 use dv_api::{User, fs::OpenFlags};
-use tracing::warn;
+use tracing::{info, warn};
 
 use super::dev::LRes;
 pub async fn try_copy(
@@ -25,8 +25,10 @@ pub async fn try_copy(
         }
     } {
         let (main, name) = if src.is_system {
+            info!("same hid, use src to copy");
             (src, dst.params.user.as_str())
         } else {
+            info!("same hid, use dst to copy");
             (dst, "")
         };
         main.copy(src_path, name, dst_path).await?;

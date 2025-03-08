@@ -1,16 +1,17 @@
 use std::borrow::Cow;
 
 use async_trait::async_trait;
-use snafu::whatever;
+use e4pty::{BoxedPtyReader, BoxedPtyWriter, Script};
 use tracing::info;
 
 use crate::{
     Result,
     fs::{BoxedFile, CheckInfo, DirInfo, FileAttributes, Metadata, OpenFlags},
     params::Params,
-    process::{BoxedPtyProcess, DynInteractor, Script},
+    process::DynInteractor,
     user::BoxedUser,
     util::BoxedAm,
+    whatever,
 };
 
 #[async_trait]
@@ -120,7 +121,7 @@ impl User {
     pub async fn app(&self, interactor: &DynInteractor, packages: &str) -> crate::Result<bool> {
         self.am.install(self, interactor, packages).await
     }
-    pub async fn exec(&self, s: Script<'_, '_>) -> Result<BoxedPtyProcess> {
+    pub async fn exec(&self, s: Script<'_, '_>) -> Result<(BoxedPtyWriter, BoxedPtyReader)> {
         self.inner.exec(s).await
     }
     pub async fn open(&self, path: &str, opt: OpenFlags) -> crate::Result<BoxedFile> {
