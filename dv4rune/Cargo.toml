@@ -30,7 +30,7 @@ clap = { version = "4.5.31", features = ["derive"] }
 tokio-fd = "0.3.0"
 crossterm = "0.28.1"
 
-resplus = { path = "../../resplus/resplus/", features = ["full"] }
+resplus = { version = "0.1.1", features = ["full"] }
 
 [dev-dependencies]
 assert_fs = "1.1.2"
