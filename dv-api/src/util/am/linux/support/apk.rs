@@ -1,5 +1,3 @@
-use crate::whatever;
-
 use super::dev::*;
 
 #[derive(Default)]
@@ -20,7 +18,7 @@ impl Am for Apk {
             program: "sh",
             input: Box::new(input),
         };
-        let pkgs = u.exec(cmd).output().await?;
+        let pkgs = u.exec(WindowSize::default(), cmd).output().await?;
         if pkgs.is_empty() {
             return Ok(false);
         }
@@ -28,7 +26,7 @@ impl Am for Apk {
             program: "apk",
             args: Box::new(["add"].into_iter().chain(pkgs.split_whitespace())),
         };
-        let pp = u.exec(cmd).await?;
+        let pp = u.exec(WindowSize::default(), cmd).await?;
         let ec = interactor.ask(pp).await?;
         if ec != 0 {
             whatever!("unexpected exit status {}", ec);

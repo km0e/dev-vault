@@ -1,15 +1,15 @@
-use crate::{whatever, wrap::UserCast};
+use crate::{ErrorSource, whatever, wrap::UserCast};
 
 use super::dev::*;
+use autox::AutoX;
+#[cfg(not(windows))]
+use std::env;
+use std::path::Path;
 #[cfg(feature = "path-home")]
 use std::path::PathBuf;
-
-use std::{env, os::unix::fs::MetadataExt, path::Path};
-use systemd::Systemd;
 use tracing::{trace, warn};
 
 mod file;
-mod systemd;
 
 #[derive(Debug)]
 pub struct LocalConfig {
@@ -24,11 +24,11 @@ fn detect() -> Params {
         }
         #[cfg(target_os = "macos")]
         {
-            Some("macos".to_string())
+            "macos".to_string()
         }
         #[cfg(target_os = "windows")]
         {
-            Some("windows".to_string())
+            "windows".to_string()
         }
     };
     let mut p = Params::new(user);
@@ -55,17 +55,68 @@ fn detect() -> Params {
         }
         #[cfg(target_os = "windows")]
         {
-            None
+            None::<String>
         }
     } {
         p.session(session);
     }
     p
 }
+
+#[cfg(windows)]
+fn is_user_admin() -> bool {
+    use windows_sys::Win32::Security::{
+        AllocateAndInitializeSid, CheckTokenMembership, FreeSid, SECURITY_NT_AUTHORITY,
+    };
+    use windows_sys::Win32::System::SystemServices::{
+        DOMAIN_ALIAS_RID_ADMINS, SECURITY_BUILTIN_DOMAIN_RID,
+    };
+
+    unsafe {
+        let mut sid = std::ptr::null_mut();
+        // 创建管理员组的 SID
+        let success = AllocateAndInitializeSid(
+            &SECURITY_NT_AUTHORITY,
+            2,
+            SECURITY_BUILTIN_DOMAIN_RID as u32,
+            DOMAIN_ALIAS_RID_ADMINS as u32,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            &mut sid,
+        ) != 0;
+
+        if !success {
+            return false;
+        }
+
+        // 检查令牌成员资格
+        let mut is_member = 0;
+        let check_success = CheckTokenMembership(std::ptr::null_mut(), sid, &mut is_member) != 0;
+
+        // 释放 SID 内存
+        FreeSid(sid);
+
+        check_success && is_member != 0
+    }
+}
+
 #[async_trait]
 impl UserCast for LocalConfig {
     async fn cast(self) -> crate::Result<User> {
-        let is_system = rustix::process::getuid().is_root();
+        let is_system = {
+            #[cfg(windows)]
+            {
+                is_user_admin()
+            }
+            #[cfg(not(windows))]
+            {
+                rustix::process::getuid().is_root()
+            }
+        };
         let mut p = detect();
         p.mount(self.mount);
         let dev = This::new(is_system).await?;
@@ -76,16 +127,18 @@ impl UserCast for LocalConfig {
 pub(crate) struct This {
     #[cfg(feature = "path-home")]
     home: Option<PathBuf>,
-    systemd: Systemd, // TODO: add more
+    autox: AutoX, // TODO: add more
 }
 
 impl This {
     pub async fn new(is_system: bool) -> Result<Self> {
-        let systemd = Systemd::new(is_system).await?;
+        let autox = AutoX::new(is_system)
+            .await
+            .map_err(|e| ErrorSource::Unknown(e.to_string()))?;
         Ok(Self {
             #[cfg(feature = "path-home")]
             home: home::home_dir(),
-            systemd,
+            autox,
         })
     }
     #[cfg(feature = "path-home")]
@@ -130,7 +183,11 @@ impl UserImpl for This {
                 if metadata.is_dir() {
                     continue;
                 }
-                let modified = metadata.mtime();
+                #[cfg(not(windows))]
+                use std::os::unix::fs::MetadataExt;
+                #[cfg(windows)]
+                use std::os::windows::fs::MetadataExt;
+                let modified = metadata.last_write_time() as i64;
                 let Ok(rel_path) = file_path.strip_prefix(path2) else {
                     continue;
                 };
@@ -166,17 +223,29 @@ impl UserImpl for This {
         std::fs::copy(&src2, &dst2)?;
         Ok(())
     }
-    async fn auto(&self, name: &str, action: &str) -> Result<()> {
-        match action {
-            "setup" => self.systemd.setup(name).await?,
-            "reload" => self.systemd.reload(name).await?,
+    async fn auto(&self, name: &str, action: &str, args: Option<&str>) -> Result<()> {
+        match (action, args) {
+            ("setup", Some(args)) => self
+                .autox
+                .setup(name, args)
+                .await
+                .map_err(|e| ErrorSource::Unknown(e.to_string()))?,
+            ("reload", None) => self
+                .autox
+                .reload(name)
+                .await
+                .map_err(|e| ErrorSource::Unknown(e.to_string()))?,
             _ => unimplemented!(),
         };
         Ok(())
     }
-    async fn exec(&self, command: Script<'_, '_>) -> Result<(BoxedPtyWriter, BoxedPtyReader)> {
+    async fn exec(
+        &self,
+        win_size: WindowSize,
+        command: Script<'_, '_>,
+    ) -> Result<(BoxedPtyWriter, BoxedPtyReader)> {
         trace!("try to exec command");
-        let (tx, rx) = openpty_local(command)?;
+        let (tx, rx) = openpty_local(win_size, command)?;
         Ok((Box::new(tx), Box::new(rx)))
     }
     async fn open(&self, path: &str, opt: OpenFlags) -> Result<BoxedFile> {

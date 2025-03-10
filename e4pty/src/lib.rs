@@ -1,6 +1,18 @@
 use async_trait::async_trait;
 use tokio::io::{AsyncRead, AsyncWrite};
 
+#[derive(Debug, Clone)]
+pub struct WindowSize {
+    pub rows: u16,
+    pub cols: u16,
+}
+
+impl Default for WindowSize {
+    fn default() -> Self {
+        Self { rows: 1, cols: 1 } // Can't be 0 in windows
+    }
+}
+
 #[async_trait]
 pub trait PtyWriter: AsyncWrite {
     async fn window_change(
@@ -17,6 +29,7 @@ pub type BoxedPtyWriter = Box<dyn PtyWriter + Send + Sync + Unpin>;
 #[async_trait]
 pub trait PtyReader: AsyncRead {
     async fn wait(&mut self) -> Result<i32, String>;
+    async fn output(&mut self) -> Result<(i32, String), String>;
 }
 
 pub type BoxedPtyReader = Box<dyn PtyReader + Send + Sync + Unpin>;

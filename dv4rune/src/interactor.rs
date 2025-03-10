@@ -1,4 +1,4 @@
-use std::{io::Read, os::fd::AsFd};
+use std::io::Read;
 
 use crossterm::terminal;
 use dv_api::process::{BoxedPtyReader, BoxedPtyWriter, Interactor};
@@ -15,12 +15,23 @@ pub struct TermInteractor {
     excl: Mutex<()>,
 }
 
+#[cfg(not(windows))]
+fn setup_stdin_nonblock() -> std::io::Result<()> {
+    use rustix::fs;
+    use std::os::fd::AsFd;
+    let stdin = std::io::stdin();
+    let fd = stdin.as_fd();
+    fs::fcntl_setfl(fd, fs::fcntl_getfl(fd)? | fs::OFlags::NONBLOCK)?;
+    Ok(())
+}
+
+fn setup_stdin_nonblock() -> std::io::Result<()> {
+    Ok(())
+}
+
 impl TermInteractor {
     pub fn new() -> std::io::Result<Self> {
-        use rustix::fs;
-        let stdin = std::io::stdin();
-        let fd = stdin.as_fd();
-        fs::fcntl_setfl(fd, fs::fcntl_getfl(fd)? | fs::OFlags::NONBLOCK)?;
+        setup_stdin_nonblock()?;
         Ok(Self {
             excl: Mutex::new(()),
         })

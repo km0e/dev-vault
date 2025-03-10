@@ -1,5 +1,6 @@
 [workspace]
-members = ["dv-api", "dv4rune", "e4pty"]
+# members = ["autox", "dv-api"]
+members = ["autox", "dv-api", "dv4rune", "e4pty"]
 resolver = "3"
 
 [workspace.package]
@@ -9,11 +10,12 @@ repository = "https://github.com/km0e/dev-vault.git"
 
 [workspace.dependencies]
 tokio = { version = "1.43.0", features = [
-    "fs",
-    "io-std",
-    "sync",
-    "rt-multi-thread",
-    "macros",
+  "fs",
+  "io-std",
+  "sync",
+  "rt-multi-thread",
+  "macros",
+  "time",            # windows
 ] }
 tracing = { version = "0.1.41" }
 async-trait = "0.1.87"

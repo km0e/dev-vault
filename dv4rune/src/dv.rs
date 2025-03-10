@@ -157,8 +157,10 @@ impl Dv {
         uid: Ref<str>,
         service: Ref<str>,
         action: Ref<str>,
+        args: Option<Ref<str>>,
     ) -> LRes<bool> {
-        crate::multi::auto(&this.context(), uid, service, action).await
+        let args = args.as_ref().map(|s| s.as_ref());
+        crate::multi::auto(&this.context(), uid, service, action, args).await
     }
     #[rune::function(path = Self::once)]
     async fn once(

@@ -1,13 +1,16 @@
 use std::fmt::Debug;
 
 use mock::MockAm;
-
+use tracing::info;
 mod linux;
+
+mod windows;
 mod dev {
     pub use super::super::dev::*;
     pub use super::{Am, BoxedAm};
+    pub use crate::whatever;
     pub use crate::{User, process::DynInteractor};
-    pub use e4pty::Script;
+    pub use e4pty::*;
 }
 use dev::*;
 mod mock;
@@ -47,8 +50,12 @@ pub(crate) use into_boxed_am;
 use super::Os;
 
 pub async fn new_am(u: &BoxedUser, os: &Os) -> crate::Result<BoxedAm> {
+    info!("new_am os:{:?}", os);
     match os {
         Os::Linux(os) => linux::try_match(u, os)
+            .await
+            .map(|x| x.unwrap_or_else(|| MockAm {}.into())),
+        Os::Windows => windows::try_match(u)
             .await
             .map(|x| x.unwrap_or_else(|| MockAm {}.into())),
         _ => Ok(MockAm {}.into()),

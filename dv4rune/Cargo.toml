@@ -24,13 +24,15 @@ rustix = { version = "1.0.1", features = ["pty", "fs"] }
 
 rune = "0.13.4"
 rune-modules = "0.13.4"
-rusqlite = "0.34.0"
+rusqlite = { version = "0.34.0", features = ["bundled"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 clap = { version = "4.5.31", features = ["derive"] }
-tokio-fd = "0.3.0"
 crossterm = "0.28.1"
 
 resplus = { version = "0.1.1", features = ["full"] }
+
+[target.'cfg(not(windows))'.dependencies]
+tokio-fd = "0.3.0"
 
 [dev-dependencies]
 assert_fs = "1.1.2"

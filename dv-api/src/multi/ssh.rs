@@ -99,7 +99,7 @@ impl UserImpl for SSHSession {
         }
         Ok(())
     }
-    async fn auto(&self, name: &str, action: &str) -> crate::Result<()> {
+    async fn auto(&self, name: &str, action: &str, _: Option<&str>) -> crate::Result<()> {
         let ec = match action {
             "setup" => self.command_util.setup(self, name),
             "reload" => self.command_util.reload(self, name),
@@ -111,14 +111,18 @@ impl UserImpl for SSHSession {
         }
         Ok(())
     }
-    async fn exec(&self, command: Script<'_, '_>) -> Result<(BoxedPtyWriter, BoxedPtyReader)> {
+    async fn exec(
+        &self,
+        win_size: WindowSize,
+        command: Script<'_, '_>,
+    ) -> Result<(BoxedPtyWriter, BoxedPtyReader)> {
         let channel = self.session.channel_open_session().await?;
         channel
             .request_pty(
                 true,
                 std::env::var("TERM").as_deref().unwrap_or("xterm"),
-                0,
-                0,
+                win_size.cols as u32,
+                win_size.rows as u32,
                 0,
                 0,
                 &[],

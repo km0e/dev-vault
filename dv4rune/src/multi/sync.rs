@@ -161,9 +161,7 @@ pub async fn sync(
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::HashMap, fs::create_dir, os::unix::fs::MetadataExt, path::Path, time::Duration,
-    };
+    use std::{collections::HashMap, fs::create_dir, path::Path, time::Duration};
 
     use dv_api::{LocalConfig, User, UserCast};
     use tokio::time::sleep;
@@ -200,8 +198,21 @@ mod tests {
         (int, cache, users, dir)
     }
     async fn cache_assert(cache: &SqliteCache, path: &Path) {
+        let metadata = path.metadata().unwrap();
+        let mtime = {
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::MetadataExt;
+                metadata.last_write_time() as i64
+            }
+            #[cfg(not(windows))]
+            {
+                use std::os::unix::fs::MetadataExt;
+                metadata.mtime()
+            }
+        };
         assert_eq!(
-            path.metadata().unwrap().mtime(),
+            mtime,
             cache
                 .get("this", path.to_str().unwrap())
                 .await

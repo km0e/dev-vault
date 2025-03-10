@@ -1,4 +1,3 @@
-use tracing::{info, trace};
 use zbus::Result as ZResult;
 use zbus::{proxy, zvariant::OwnedObjectPath};
 
@@ -108,5 +107,12 @@ impl Systemd {
             unit.start("replace").await?;
         }
         Ok(())
+    }
+    pub fn enable(&self, name: impl AsRef<OsStr>) -> Result<(), String> {
+        todo!();
+        Ok(())
+    }
+    pub fn disable(&self, name: impl AsRef<OsStr>) -> Result<(), String> {
+        todo!()
     }
 }

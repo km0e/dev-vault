@@ -12,8 +12,12 @@ pub trait UserImpl {
     async fn glob_file_meta(&self, path: &str) -> Result<Vec<Metadata>>;
     async fn copy(&self, src_path: &str, dst: &str, dst_path: &str) -> Result<()>;
     async fn open(&self, path: &str, opt: OpenFlags) -> Result<BoxedFile>;
-    async fn auto(&self, name: &str, action: &str) -> Result<()>;
-    async fn exec(&self, command: Script<'_, '_>) -> Result<(BoxedPtyWriter, BoxedPtyReader)>;
+    async fn auto(&self, name: &str, action: &str, args: Option<&str>) -> Result<()>;
+    async fn exec(
+        &self,
+        win_size: WindowSize,
+        command: Script<'_, '_>,
+    ) -> Result<(BoxedPtyWriter, BoxedPtyReader)>;
 }
 
 pub type BoxedUser = Box<dyn UserImpl + Send + Sync>;
@@ -38,5 +42,5 @@ macro_rules! into_boxed_user {
     };
 }
 
-use e4pty::{BoxedPtyReader, BoxedPtyWriter, Script};
+use e4pty::{BoxedPtyReader, BoxedPtyWriter, Script, WindowSize};
 pub(crate) use into_boxed_user;

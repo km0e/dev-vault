@@ -5,10 +5,12 @@ use super::dev::*;
 pub async fn manjaro_am(u: &BoxedUser) -> crate::Result<BoxedAm> {
     debug!("try to detect manjaro package manager");
     let output = u
-        .exec(Script::Script {
-            program: "sh",
-            input: Box::new(
-                [r#"stty -echo
+        .exec(
+            WindowSize::default(),
+            Script::Script {
+                program: "sh",
+                input: Box::new(
+                    [r#"stty -echo
                     if command -v yay >/dev/null 2>&1; then
                         exit 1
                     elif command -v paru >/dev/null 2>&1; then
@@ -17,9 +19,10 @@ pub async fn manjaro_am(u: &BoxedUser) -> crate::Result<BoxedAm> {
                         exit 0
                     fi
                     "#]
-                .into_iter(),
-            ),
-        })
+                    .into_iter(),
+                ),
+            },
+        )
         .wait()
         .await?;
 

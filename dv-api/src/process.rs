@@ -1,9 +1,9 @@
 use async_trait::async_trait;
+pub use e4pty::WindowSize;
 pub use e4pty::{BoxedPtyReader, BoxedPtyWriter, Script};
-use tokio::io::AsyncReadExt;
 use tracing::debug;
 
-use crate::{Result, error::ErrorSource, whatever};
+use crate::{Result, error::ErrorSource};
 
 #[async_trait]
 pub trait Interactor {
@@ -26,15 +26,10 @@ impl<T: Future<Output = Result<(BoxedPtyWriter, BoxedPtyReader)>> + Send> PtyPro
         Ok(es)
     }
     async fn output(self) -> Result<String> {
-        let mut buf = String::new();
-        let (_, mut rx) = self.await?;
+        let (tx, mut rx) = self.await?;
+        drop(tx);
         debug!("try to read output");
-        let err = rx.read_to_string(&mut buf).await;
-        let es = rx.wait().await.map_err(ErrorSource::Unknown)?;
-        if es != 0 {
-            err?;
-            whatever!("exit status {}", es);
-        }
+        let (es, buf) = rx.output().await.map_err(ErrorSource::Unknown)?;
         Ok(buf)
     }
 }
