@@ -9,17 +9,16 @@ authors = ["km0e <kmdr.error@gmail.com>"]
 repository = "https://github.com/km0e/dev-vault.git"
 
 [workspace.dependencies]
-tokio = { version = "1.43.0", features = [
-  "fs",
-  "io-std",
-  "sync",
-  "rt-multi-thread",
-  "macros",
-  "time",            # windows
+tokio = { version = "1.44.0", features = [
+    "fs",
+    "io-std",
+    "sync",
+    "rt-multi-thread",
+    "macros",
+    "time",            # windows
 ] }
 tracing = { version = "0.1.41" }
 async-trait = "0.1.87"
-snafu = "0.8.5"
 home = { version = "0.5.11" }
 
 [profile.release]

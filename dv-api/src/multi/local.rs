@@ -1,4 +1,4 @@
-use crate::{ErrorSource, whatever, wrap::UserCast};
+use crate::{Error, whatever, wrap::UserCast};
 
 use super::dev::*;
 use autox::AutoX;
@@ -134,7 +134,7 @@ impl This {
     pub async fn new(is_system: bool) -> Result<Self> {
         let autox = AutoX::new(is_system)
             .await
-            .map_err(|e| ErrorSource::Unknown(e.to_string()))?;
+            .map_err(|e| Error::Unknown(e.to_string()))?;
         Ok(Self {
             #[cfg(feature = "path-home")]
             home: home::home_dir(),
@@ -185,8 +185,11 @@ impl UserImpl for This {
                 }
                 #[cfg(not(windows))]
                 use std::os::unix::fs::MetadataExt;
+                #[cfg(not(windows))]
+                let modified = metadata.mtime();
                 #[cfg(windows)]
                 use std::os::windows::fs::MetadataExt;
+                #[cfg(windows)]
                 let modified = metadata.last_write_time() as i64;
                 let Ok(rel_path) = file_path.strip_prefix(path2) else {
                     continue;
@@ -229,20 +232,38 @@ impl UserImpl for This {
                 .autox
                 .setup(name, args)
                 .await
-                .map_err(|e| ErrorSource::Unknown(e.to_string()))?,
+                .map_err(|e| Error::Unknown(e.to_string()))?,
+            ("enable", None) => self
+                .autox
+                .enable(name)
+                .await
+                .map_err(|e| Error::Unknown(e.to_string()))?,
             ("reload", None) => self
                 .autox
                 .reload(name)
                 .await
-                .map_err(|e| ErrorSource::Unknown(e.to_string()))?,
+                .map_err(|e| Error::Unknown(e.to_string()))?,
             _ => unimplemented!(),
         };
         Ok(())
     }
-    async fn exec(
+    async fn exec(&self, script: Script<'_, '_>) -> Result<Output> {
+        let mut builder = script.into_command()?;
+        builder
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let output = builder.output()?;
+        Ok(Output {
+            code: exit_status2exit_code(output.status),
+            stdout: output.stdout,
+            stderr: output.stderr,
+        })
+    }
+    async fn pty(
         &self,
-        win_size: WindowSize,
         command: Script<'_, '_>,
+        win_size: WindowSize,
     ) -> Result<(BoxedPtyWriter, BoxedPtyReader)> {
         trace!("try to exec command");
         let (tx, rx) = openpty_local(win_size, command)?;
@@ -254,4 +275,10 @@ impl UserImpl for This {
         let file = tokio::fs::OpenOptions::from(opt).open(&path2).await?;
         Ok(Box::new(file))
     }
+}
+
+pub fn exit_status2exit_code(es: std::process::ExitStatus) -> i32 {
+    use std::os::unix::process::ExitStatusExt;
+    es.code()
+        .unwrap_or_else(|| es.signal().map_or(1, |v| 128 + v))
 }

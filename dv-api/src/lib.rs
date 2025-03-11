@@ -10,6 +10,5 @@ mod util;
 pub use util::*;
 
 mod wrap;
-pub use error::Result;
-pub use error::{ErrorChain, ErrorSource};
+pub use error::{Error, Result};
 pub use wrap::{User, UserCast};

@@ -8,9 +8,8 @@ mod windows;
 mod dev {
     pub use super::super::dev::*;
     pub use super::{Am, BoxedAm};
-    pub use crate::whatever;
-    pub use crate::{User, process::DynInteractor};
-    pub use e4pty::*;
+    pub use crate::{User, process::DynInteractor, whatever};
+    pub use e4pty::prelude::*;
 }
 use dev::*;
 mod mock;

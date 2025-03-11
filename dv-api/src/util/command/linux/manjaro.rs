@@ -16,20 +16,14 @@ impl<U: UserImpl + Send + Sync> CommandUtil<U> for Manjaro {
     //file utils
     async fn copy(&self, dev: &U, src_path: &str, dst_user: &str, dst_path: &str) -> Result<i32> {
         let ec = dev
-            .exec(
-                WindowSize::default(),
-                ["cp", src_path, dst_path].as_ref().into(),
-            )
+            .exec(["cp", src_path, dst_path].as_ref().into())
             .wait()
             .await?;
         if dst_user.is_empty() || ec != 0 {
             return Ok(ec);
         }
-        dev.exec(
-            WindowSize::default(),
-            ["chown", dst_user, dst_path].as_ref().into(),
-        )
-        .wait()
-        .await
+        dev.exec(["chown", dst_user, dst_path].as_ref().into())
+            .wait()
+            .await
     }
 }

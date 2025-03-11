@@ -1,3 +1,4 @@
+use tracing::{info, trace};
 use zbus::Result as ZResult;
 use zbus::{proxy, zvariant::OwnedObjectPath};
 
@@ -41,13 +42,13 @@ trait Unit {
     fn start(&self, mode: &str) -> ZResult<OwnedObjectPath>;
     fn restart(&self, mode: &str) -> ZResult<OwnedObjectPath>;
 }
-pub struct Systemd {
+pub struct AutoX {
     is_system: bool,
     conn: zbus::Connection,
     manager: ManagerProxy<'static>,
 }
 
-impl Systemd {
+impl AutoX {
     pub async fn new(is_system: bool) -> Result<Self, zbus::Error> {
         let conn = if is_system {
             info!("start system connection");
@@ -63,7 +64,10 @@ impl Systemd {
             manager,
         })
     }
-    pub async fn setup(&self, name: &str) -> Result<(), zbus::Error> {
+    pub async fn setup(&self, _name: &str, _args: &str) -> Result<(), zbus::Error> {
+        unimplemented!()
+    }
+    pub async fn enable(&self, name: &str) -> Result<(), zbus::Error> {
         trace!(
             "[{}] setup {}",
             if self.is_system { "system" } else { "user" },
@@ -107,12 +111,5 @@ impl Systemd {
             unit.start("replace").await?;
         }
         Ok(())
-    }
-    pub fn enable(&self, name: impl AsRef<OsStr>) -> Result<(), String> {
-        todo!();
-        Ok(())
-    }
-    pub fn disable(&self, name: impl AsRef<OsStr>) -> Result<(), String> {
-        todo!()
     }
 }

@@ -10,15 +10,12 @@ pub async fn exec(
     let uid = uid.as_ref();
     let commands = commands.as_ref();
     let script = shell
-        .map(|sh| Script::Script {
-            program: sh,
-            input: Box::new([commands].into_iter()),
-        })
+        .map(|_sh| Script::sh(Box::new([commands].into_iter())))
         .unwrap_or_else(|| Script::Whole(commands));
     let user = ctx.get_user(uid).await?;
     if !ctx.dry_run {
         let pp = user
-            .exec(WindowSize::default(), script)
+            .pty(script, WindowSize::default())
             .log(ctx.interactor)
             .await?;
 

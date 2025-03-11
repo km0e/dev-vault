@@ -12,5 +12,5 @@ mod dev {
     pub use super::super::user::*;
     pub use crate::{Result, User, UserCast, fs::*, util::BoxedCommandUtil};
     pub use async_trait::async_trait;
-    pub use e4pty::*;
+    pub use e4pty::prelude::*;
 }

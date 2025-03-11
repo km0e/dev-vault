@@ -25,6 +25,7 @@ fn setup_stdin_nonblock() -> std::io::Result<()> {
     Ok(())
 }
 
+#[cfg(windows)]
 fn setup_stdin_nonblock() -> std::io::Result<()> {
     Ok(())
 }
@@ -48,9 +49,7 @@ impl Interactor for TermInteractor {
     async fn ask(&self, pty: (BoxedPtyWriter, BoxedPtyReader)) -> dv_api::Result<i32> {
         let (width, height) = terminal::size()?;
         let (mut tx, mut rx) = pty;
-        tx.window_change(width as u32, height as u32, 0, 0)
-            .await
-            .map_err(dv_api::ErrorSource::Unknown)?;
+        tx.window_change(width as u32, height as u32).await?;
         #[allow(unused_variables)]
         let g = self.excl.lock().await;
         terminal::enable_raw_mode()?;

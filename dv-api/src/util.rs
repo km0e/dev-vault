@@ -9,7 +9,7 @@ mod dev {
     pub use crate::process::PtyProcessConsumer;
     pub use crate::{Result, params::*, user::*};
     pub use async_trait::async_trait;
-    pub use e4pty::*;
+    pub use e4pty::prelude::*;
 }
 
 pub use command::BoxedCommandUtil;

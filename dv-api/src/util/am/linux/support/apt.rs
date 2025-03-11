@@ -11,26 +11,14 @@ impl Am for Apt {
         interactor: &DynInteractor,
         packages: &str,
     ) -> crate::Result<bool> {
-        use std::iter::once;
-        let args = format!("pkgs=\"{}\";", packages);
-        let input = once(args.as_str()).chain(once(include_str!("sh/apt_query.sh")));
-        let cmd = Script::Script {
-            program: "sh",
-            input: Box::new(input),
-        };
-        let pkgs = u.exec(WindowSize::default(), cmd).output().await?;
-        if pkgs.is_empty() {
-            return Ok(false);
-        }
-        let cmd = Script::Split {
-            program: "apt-get",
-            args: Box::new(["install", "-y"].into_iter().chain(pkgs.split_whitespace())),
-        };
-        let pp = u.exec(WindowSize::default(), cmd).await?;
-        let ec = interactor.ask(pp).await?;
-        if ec != 0 {
-            whatever!("unexpected exit status {}", ec);
-        }
-        Ok(true)
+        super::install(
+            u,
+            interactor,
+            format!("pkgs=\"{}\";", packages),
+            include_str!("sh/apt_query.sh"),
+            "apt-get",
+            &["install", "-y"][..],
+        )
+        .await
     }
 }

@@ -4,6 +4,13 @@ use crate::{
     Result,
     fs::{BoxedFile, FileAttributes, Metadata, OpenFlags},
 };
+use e4pty::prelude::*;
+
+pub struct Output {
+    pub code: i32,
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+}
 
 #[async_trait::async_trait]
 pub trait UserImpl {
@@ -13,10 +20,11 @@ pub trait UserImpl {
     async fn copy(&self, src_path: &str, dst: &str, dst_path: &str) -> Result<()>;
     async fn open(&self, path: &str, opt: OpenFlags) -> Result<BoxedFile>;
     async fn auto(&self, name: &str, action: &str, args: Option<&str>) -> Result<()>;
-    async fn exec(
+    async fn exec(&self, command: Script<'_, '_>) -> Result<Output>;
+    async fn pty(
         &self,
-        win_size: WindowSize,
         command: Script<'_, '_>,
+        win_size: WindowSize,
     ) -> Result<(BoxedPtyWriter, BoxedPtyReader)>;
 }
 
@@ -42,5 +50,4 @@ macro_rules! into_boxed_user {
     };
 }
 
-use e4pty::{BoxedPtyReader, BoxedPtyWriter, Script, WindowSize};
 pub(crate) use into_boxed_user;

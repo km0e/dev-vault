@@ -18,15 +18,15 @@ dv-api = { path = "../dv-api", features = ["full"] }
 home.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-snafu.workspace = true
 async-trait.workspace = true
-rustix = { version = "1.0.1", features = ["pty", "fs"] }
+
+rustix = { version = "1.0.2", features = ["pty", "fs"] }
 
 rune = "0.13.4"
 rune-modules = "0.13.4"
 rusqlite = { version = "0.34.0", features = ["bundled"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-clap = { version = "4.5.31", features = ["derive"] }
+clap = { version = "4.5.32", features = ["derive"] }
 crossterm = "0.28.1"
 
 resplus = { version = "0.1.1", features = ["full"] }
