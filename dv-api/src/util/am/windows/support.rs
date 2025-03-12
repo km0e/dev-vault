@@ -20,6 +20,7 @@ impl Am for WinGet {
         let input = once(args.as_str()).chain(once(include_str!("sh/winget_query.ps1")));
         let cmd = Script::powershell(Box::new(input));
         let pkgs = u.exec(cmd).output().await?;
+        let pkgs = pkgs.trim();
         if pkgs.is_empty() {
             debug!("no package need to be installed");
             return Ok(false);

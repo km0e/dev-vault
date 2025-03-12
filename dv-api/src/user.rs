@@ -21,11 +21,7 @@ pub trait UserImpl {
     async fn open(&self, path: &str, opt: OpenFlags) -> Result<BoxedFile>;
     async fn auto(&self, name: &str, action: &str, args: Option<&str>) -> Result<()>;
     async fn exec(&self, command: Script<'_, '_>) -> Result<Output>;
-    async fn pty(
-        &self,
-        command: Script<'_, '_>,
-        win_size: WindowSize,
-    ) -> Result<(BoxedPtyWriter, BoxedPtyReader)>;
+    async fn pty(&self, command: Script<'_, '_>, win_size: WindowSize) -> Result<BoxedPty>;
 }
 
 pub type BoxedUser = Box<dyn UserImpl + Send + Sync>;

@@ -4,31 +4,30 @@ use std::io::{Error, Write};
 use std::mem;
 use std::os::windows::ffi::OsStrExt;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::{debug, info};
 
 use windows::Win32::Foundation::{HANDLE, MAX_PATH};
 use windows::Win32::Storage::FileSystem::{ReadFile, SearchPathW, WriteFile};
-use windows::Win32::System::Console::{
-    COORD, ClosePseudoConsole, CreatePseudoConsole, HPCON, ResizePseudoConsole,
-};
+use windows::Win32::System::Console::*;
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 use windows::Win32::System::Pipes::CreatePipe;
 use windows::Win32::System::Threading::*;
 use windows::core::*;
 
-use crate::{PtyReader, PtyWriter, Script, WindowSize};
+use crate::Result;
+use crate::core::*;
 
 #[derive(Clone)]
 struct ConptyApi {
+    #[allow(clippy::type_complexity)]
     create: Arc<Box<dyn Fn(WindowSize, HANDLE, HANDLE) -> windows::core::Result<HPCON>>>,
+    #[allow(clippy::type_complexity)]
     resize: Arc<Box<dyn Fn(HPCON, WindowSize) -> windows::core::Result<()>>>,
     close: Arc<Box<dyn Fn(HPCON)>>,
 }
 
 struct PtyReaderImpl {
-    api: Conpty,
     out: SafeHandle,
 }
 
@@ -51,53 +50,7 @@ impl AsyncRead for PtyReaderImpl {
         std::task::Poll::Ready(Ok(()))
     }
 }
-
-#[async_trait]
-impl PtyReader for PtyReaderImpl {
-    async fn wait(&mut self) -> std::result::Result<i32, String> {
-        let mut exit_code: u32 = 0;
-        unsafe { WaitForSingleObject(self.api.handle, INFINITE) };
-        unsafe { GetExitCodeProcess(self.api.handle as HANDLE, &mut exit_code as *mut u32) }
-            .map_err(|e| format!("GetExitCodeProcess failed: {:?}", e))?;
-        debug!("exit code: {}", exit_code);
-        Ok(exit_code as i32)
-    }
-    async fn output(&mut self) -> std::result::Result<(i32, String), String> {
-        let mut buf = Vec::new();
-        let mut exit_code: u32 = 0;
-        unsafe { WaitForSingleObject(self.api.handle, INFINITE) };
-        unsafe { GetExitCodeProcess(self.api.handle as HANDLE, &mut exit_code as *mut u32) }
-            .map_err(|e| format!("GetExitCodeProcess failed: {:?}", e))?;
-        debug!("exit code: {}", exit_code);
-        let mut bytes = 0;
-        loop {
-            let mut raw_buf = [0u8; 4096];
-            if let Err(e) =
-                unsafe { ReadFile(self.out.0, Some(&mut raw_buf), Some(&mut bytes), None) }
-            {
-                if exit_code == 0 {
-                    break;
-                }
-                return Err(format!("ReadFile failed: {:?}", e));
-            }
-            if bytes == 0 {
-                break;
-            }
-            debug!("read bytes: {:?}", raw_buf[..bytes as usize].to_vec());
-            buf.extend(raw_buf.iter().filter(|&&b| b != b'\n'));
-            if bytes < 4096 {
-                break;
-            }
-        }
-        Ok((
-            exit_code as i32,
-            String::from_utf8(buf).map_err(|e| format!("invalid utf8: {:?}", e))?,
-        ))
-    }
-}
-
 struct PtyWriterImpl {
-    handle: Conpty,
     in_: SafeHandle,
 }
 impl AsyncWrite for PtyWriterImpl {
@@ -129,23 +82,29 @@ impl AsyncWrite for PtyWriterImpl {
     }
 }
 
+pub struct PtyCtlImpl {
+    handle: Conpty,
+}
+
 #[async_trait]
-impl PtyWriter for PtyWriterImpl {
-    async fn window_change(
-        &self,
-        width: u32,
-        height: u32,
-        _pix_width: u32,
-        _pix_height: u32,
-    ) -> std::result::Result<(), String> {
+impl PtyCtl for PtyCtlImpl {
+    async fn window_change(&self, width: u32, height: u32) -> Result<()> {
         (self.handle.api.resize)(
             self.handle.hpcon,
             WindowSize {
                 rows: height as u16,
                 cols: width as u16,
             },
-        )
-        .map_err(|e| format!("ResizePseudoConsole failed: {:?}", e))
+        )?;
+        Ok(())
+    }
+
+    async fn wait(&self) -> Result<i32> {
+        let mut exit_code: u32 = 0;
+        unsafe { WaitForSingleObject(self.handle.handle, INFINITE) };
+        unsafe { GetExitCodeProcess(self.handle.handle, &mut exit_code as *mut u32) }?;
+        debug!("exit code: {}", exit_code);
+        Ok(exit_code as i32)
     }
 }
 
@@ -214,7 +173,6 @@ impl ConptyApi {
 pub struct Conpty {
     pub hpcon: HPCON,
     pub handle: HANDLE,
-    once: Arc<AtomicBool>,
     api: ConptyApi,
 }
 
@@ -223,11 +181,7 @@ unsafe impl Sync for Conpty {}
 
 impl Drop for Conpty {
     fn drop(&mut self) {
-        if self.once.load(std::sync::atomic::Ordering::Relaxed) {
-            (self.api.close)(self.hpcon);
-        } else {
-            self.once.store(true, std::sync::atomic::Ordering::Relaxed);
-        }
+        (self.api.close)(self.hpcon);
     }
 }
 
@@ -259,13 +213,7 @@ impl Drop for SafeHandle {
     }
 }
 
-pub fn openpty<'w, 'r>(
-    window_size: WindowSize,
-    command: Script<'_, '_>,
-) -> std::io::Result<(
-    impl PtyWriter + Send + Sync + Unpin + 'w,
-    impl PtyReader + Send + Sync + Unpin + 'r,
-)> {
+pub fn openpty(window_size: WindowSize, command: Script<'_, '_>) -> std::io::Result<BoxedPty> {
     let api = ConptyApi::new();
 
     let mut conout = SafeHandle::default();
@@ -319,7 +267,6 @@ pub fn openpty<'w, 'r>(
             None,
         )
     }?;
-
     // Prepare child process creation arguments.
     let abs_path = |path: &str| {
         debug!("searching for {}", path);
@@ -356,8 +303,8 @@ pub fn openpty<'w, 'r>(
             program.push(0);
             program
         }
-        Script::Script { program, input } => {
-            let mut program = abs_path(program)?;
+        Script::Script { executor, input } => {
+            let mut program = abs_path(executor.as_ref())?;
             let mut tmp = tempfile::NamedTempFile::with_suffix(".ps1")?;
             for line in input {
                 tmp.write_all(line.as_bytes())?;
@@ -396,21 +343,19 @@ pub fn openpty<'w, 'r>(
         )
     }?;
 
+    unsafe {
+        DeleteProcThreadAttributeList(startup_info_ex.lpAttributeList);
+    }
+
     let conpty = Conpty {
         handle: proc_info.hProcess,
         hpcon: pty_handle as HPCON,
-        once: Arc::new(AtomicBool::new(false)),
         api,
     };
-    Ok((
-        PtyWriterImpl {
-            handle: conpty.clone(),
-            in_: conin,
-        },
-        PtyReaderImpl {
-            api: conpty,
-            out: conout,
-        },
+    Ok(BoxedPty::new(
+        PtyCtlImpl { handle: conpty },
+        PtyWriterImpl { in_: conin },
+        PtyReaderImpl { out: conout },
     ))
 }
 

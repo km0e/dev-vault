@@ -260,14 +260,10 @@ impl UserImpl for This {
             stderr: output.stderr,
         })
     }
-    async fn pty(
-        &self,
-        command: Script<'_, '_>,
-        win_size: WindowSize,
-    ) -> Result<(BoxedPtyWriter, BoxedPtyReader)> {
+    async fn pty(&self, command: Script<'_, '_>, win_size: WindowSize) -> Result<BoxedPty> {
         trace!("try to exec command");
-        let (tx, rx) = openpty_local(win_size, command)?;
-        Ok((Box::new(tx), Box::new(rx)))
+        let pty = openpty_local(win_size, command)?;
+        Ok(pty)
     }
     async fn open(&self, path: &str, opt: OpenFlags) -> Result<BoxedFile> {
         let path2 = Path::new(path);
@@ -277,8 +273,14 @@ impl UserImpl for This {
     }
 }
 
+#[cfg(not(windows))]
 pub fn exit_status2exit_code(es: std::process::ExitStatus) -> i32 {
     use std::os::unix::process::ExitStatusExt;
     es.code()
         .unwrap_or_else(|| es.signal().map_or(1, |v| 128 + v))
+}
+
+#[cfg(windows)]
+pub fn exit_status2exit_code(es: std::process::ExitStatus) -> i32 {
+    es.code().unwrap_or(1)
 }

@@ -7,6 +7,9 @@ pub enum Error {
     #[cfg(not(windows))]
     #[error("openpty error: {0}")]
     Errno(#[from] rustix_openpty::rustix::io::Errno),
+    #[cfg(windows)]
+    #[error("openpty error: {0}")]
+    Windows(#[from] windows::core::Error),
     #[error("unknown error: {0}")]
     Unknown(String),
 }
@@ -15,6 +18,6 @@ pub enum Error {
 define_error!(Error, std::io::Error, rustix_openpty::rustix::io::Errno);
 
 #[cfg(windows)]
-define_error!(Error, std::io::Error);
+define_error!(Error, std::io::Error, windows::core::Error);
 
 pub type Result<T, E = ErrorChain> = std::result::Result<T, E>;

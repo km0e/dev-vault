@@ -1,7 +1,5 @@
 pub mod prelude {
-    pub use super::core::{
-        BoxedPtyReader, BoxedPtyWriter, PtyReader, PtyWriter, Script, ScriptExecutor, WindowSize,
-    };
+    pub use super::core::*;
     pub use super::instance::openpty_local;
 }
 

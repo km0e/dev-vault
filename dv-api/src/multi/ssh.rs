@@ -162,10 +162,10 @@ impl UserImpl for SSHSession {
         let cmd = self.prepare_command(command).await?;
         info!("exec {}", cmd);
         channel.exec(true, cmd).await?;
-        let mut r = channel.into_pty().1;
+        let mut pty = channel.into_pty();
         let mut stdout = Vec::new();
-        r.read_to_end(&mut stdout).await?;
-        let code = r.wait().await?;
+        pty.reader.read_to_end(&mut stdout).await?;
+        let code = pty.ctl.wait().await?;
         debug!("exec done");
         Ok(Output {
             code,
@@ -173,11 +173,7 @@ impl UserImpl for SSHSession {
             stderr: Vec::new(),
         })
     }
-    async fn pty(
-        &self,
-        command: Script<'_, '_>,
-        win_size: WindowSize,
-    ) -> Result<(BoxedPtyWriter, BoxedPtyReader)> {
+    async fn pty(&self, command: Script<'_, '_>, win_size: WindowSize) -> Result<BoxedPty> {
         let channel = self.session.channel_open_session().await?;
         channel
             .request_pty(
@@ -193,8 +189,7 @@ impl UserImpl for SSHSession {
         // info!("exec {}", command);
         let cmd = self.prepare_command(command).await?;
         channel.exec(true, cmd).await?;
-        let (tx, rx) = channel.into_pty();
-        Ok((Box::new(tx), Box::new(rx)))
+        Ok(channel.into_pty())
     }
     async fn open(&self, path: &str, opt: OpenFlags) -> crate::Result<BoxedFile> {
         let open_flags = opt.into();

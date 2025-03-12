@@ -7,7 +7,7 @@ use crate::user::Output;
 #[async_trait]
 pub trait Interactor {
     async fn log(&self, msg: &str);
-    async fn ask(&self, pty: (BoxedPtyWriter, BoxedPtyReader)) -> crate::Result<i32>;
+    async fn ask(&self, pty: BoxedPty) -> crate::Result<i32>;
 }
 
 pub type DynInteractor = dyn Interactor + Sync;

@@ -169,7 +169,7 @@ impl AutoX {
     pub fn uninstall(&self, name: impl AsRef<OsStr>) -> windows::core::Result<()> {
         ServiceControlHandle::new(self.sch_scmanager, name, SERVICE_ALL_ACCESS)?.delete()
     }
-    pub fn enable(&self, name: impl AsRef<OsStr>) -> windows::core::Result<()> {
+    pub async fn enable(&self, name: impl AsRef<OsStr>) -> windows::core::Result<()> {
         ServiceControlHandle::new(self.sch_scmanager, name, SERVICE_CHANGE_CONFIG)?
             .change(SERVICE_AUTO_START)
     }
@@ -238,7 +238,7 @@ impl AutoX {
     ) -> windows::core::Result<()> {
         let name = name.as_ref();
         self.install(name, cmd)?;
-        self.enable(name)?;
+        self.enable(name).await?;
         self.start(name)?;
         Ok(())
     }

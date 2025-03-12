@@ -121,11 +121,7 @@ impl User {
     pub async fn app(&self, interactor: &DynInteractor, packages: &str) -> crate::Result<bool> {
         self.am.install(self, interactor, packages).await
     }
-    pub async fn pty(
-        &self,
-        s: Script<'_, '_>,
-        win_size: WindowSize,
-    ) -> Result<(BoxedPtyWriter, BoxedPtyReader)> {
+    pub async fn pty(&self, s: Script<'_, '_>, win_size: WindowSize) -> Result<BoxedPty> {
         self.inner.pty(s, win_size).await
     }
     pub async fn exec(&self, s: Script<'_, '_>) -> Result<Output> {

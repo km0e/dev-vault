@@ -1,4 +1,4 @@
-use std::{ffi::OsStr, fmt::Display, io::Write, process::Command};
+use std::{fmt::Display, io::Write, process::Command};
 
 use async_trait::async_trait;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -16,20 +16,53 @@ impl Default for WindowSize {
         Self { rows: 1, cols: 1 } // Can't be 0 in windows
     }
 }
-
 #[async_trait]
-pub trait PtyWriter: AsyncWrite {
+pub trait PtyCtl {
     async fn window_change(&self, width: u32, height: u32) -> Result<()>;
+    async fn wait(&self) -> Result<i32>;
 }
 
-pub type BoxedPtyWriter = Box<dyn PtyWriter + Send + Sync + Unpin>;
-
-#[async_trait]
-pub trait PtyReader: AsyncRead {
-    async fn wait(&mut self) -> Result<i32>;
+pub struct BoxedPty {
+    pub ctl: Box<dyn PtyCtl + Send + Sync + Unpin>,
+    pub writer: Box<dyn AsyncWrite + Send + Sync + Unpin>,
+    pub reader: Box<dyn AsyncRead + Send + Sync + Unpin>,
 }
 
-pub type BoxedPtyReader = Box<dyn PtyReader + Send + Sync + Unpin>;
+impl BoxedPty {
+    pub fn new(
+        ctl: impl PtyCtl + Send + Sync + Unpin + 'static,
+        writer: impl AsyncWrite + Send + Sync + Unpin + 'static,
+        reader: impl AsyncRead + Send + Sync + Unpin + 'static,
+    ) -> Self {
+        Self {
+            ctl: Box::new(ctl),
+            writer: Box::new(writer),
+            reader: Box::new(reader),
+        }
+    }
+    pub fn destruct(
+        self,
+    ) -> (
+        Box<dyn PtyCtl + Send + Sync + Unpin>,
+        Box<dyn AsyncWrite + Send + Sync + Unpin>,
+        Box<dyn AsyncRead + Send + Sync + Unpin>,
+    ) {
+        (self.ctl, self.writer, self.reader)
+    }
+}
+// #[async_trait]
+// pub trait PtyWriter: AsyncWrite {
+//     async fn window_change(&self, width: u32, height: u32) -> Result<()>;
+// }
+
+// pub type BoxedPtyWriter = Box<dyn PtyWriter + Send + Sync + Unpin>;
+
+// #[async_trait]
+// pub trait PtyReader: AsyncRead {
+//     async fn wait(&mut self) -> Result<i32>;
+// }
+
+// pub type BoxedPtyReader = Box<dyn PtyReader + Send + Sync + Unpin>;
 
 pub enum ScriptExecutor {
     Sh,
@@ -54,11 +87,11 @@ impl ScriptExecutor {
     }
 }
 
-impl AsRef<OsStr> for ScriptExecutor {
-    fn as_ref(&self) -> &OsStr {
+impl AsRef<str> for ScriptExecutor {
+    fn as_ref(&self) -> &str {
         match self {
-            ScriptExecutor::Sh => OsStr::new("sh"),
-            ScriptExecutor::Powershell => OsStr::new("powershell"),
+            ScriptExecutor::Sh => "sh",
+            ScriptExecutor::Powershell => "powershell",
         }
     }
 }
@@ -102,13 +135,16 @@ impl<'a, 'b> Script<'a, 'b> {
                 cmd
             }
             Script::Script { executor, input } => {
-                let mut temp = tempfile::NamedTempFile::new()?;
+                let mut temp = match executor {
+                    ScriptExecutor::Sh => tempfile::NamedTempFile::new(),
+                    ScriptExecutor::Powershell => tempfile::NamedTempFile::with_suffix(".ps1"),
+                }?;
                 for line in input {
                     temp.write_all(line.as_bytes())?;
                 }
                 temp.write_all(executor.prepare_clean().as_slice())?;
                 let path = temp.into_temp_path().keep()?;
-                let mut cmd = Command::new(executor);
+                let mut cmd = Command::new(executor.as_ref());
                 cmd.arg(path);
                 cmd
             }
