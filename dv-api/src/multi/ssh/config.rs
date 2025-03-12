@@ -72,6 +72,7 @@ async fn connect(host: String, passwd: Option<String>) -> Result<(Handle<Client>
     let mut res = flog!(session.authenticate_none(&host_cfg.user)).await?;
     let AuthResult::Failure {
         mut remaining_methods,
+        ..
     } = res
     else {
         return Ok((session, host_cfg.user));
@@ -91,6 +92,7 @@ async fn connect(host: String, passwd: Option<String>) -> Result<(Handle<Client>
         .await?;
         let AuthResult::Failure {
             remaining_methods: s,
+            ..
         } = res
         else {
             return Ok((session, host_cfg.user));

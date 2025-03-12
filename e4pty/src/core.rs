@@ -19,7 +19,7 @@ impl Default for WindowSize {
 #[async_trait]
 pub trait PtyCtl {
     async fn window_change(&self, width: u32, height: u32) -> Result<()>;
-    async fn wait(&self) -> Result<i32>;
+    async fn wait(&mut self) -> Result<i32>;
 }
 
 pub struct BoxedPty {

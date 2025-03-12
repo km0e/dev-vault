@@ -48,7 +48,7 @@ impl Interactor for TermInteractor {
     //TODO:more easily error handling
     async fn ask(&self, pty: BoxedPty) -> dv_api::Result<i32> {
         let (width, height) = terminal::size()?;
-        let (ctl, mut tx, mut rx) = pty.destruct();
+        let (mut ctl, mut tx, mut rx) = pty.destruct();
         ctl.window_change(width as u32, height as u32).await?;
         let mut stdin = noblock_stdin();
         #[allow(unused_variables)]
@@ -177,6 +177,8 @@ fn noblock_stdin() -> impl AsyncRead {
 
 #[cfg(not(windows))]
 fn noblock_stdin() -> impl AsyncRead {
+    use std::io::Read;
+
     struct AsyncStdin;
     impl AsyncRead for AsyncStdin {
         fn poll_read(

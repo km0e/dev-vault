@@ -6,11 +6,22 @@ use tokio::{fs::File, io::AsyncRead};
 
 use crate::{core::*, error::Result};
 
+struct PtyCtlImpl {
+    child: std::process::Child,
+}
+
 #[async_trait]
-impl PtyWriter for File {
+impl PtyCtl for PtyCtlImpl {
+    async fn wait(&mut self) -> Result<i32> {
+        let ec = self.child.wait().map(|es| {
+            es.code()
+                .unwrap_or_else(|| es.signal().map_or(1, |v| 128 + v))
+        })?;
+        Ok(ec)
+    }
     async fn window_change(&self, width: u32, height: u32) -> Result<()> {
         termios::tcsetwinsize(
-            self,
+            self.child.stdin.as_ref().unwrap(),
             termios::Winsize {
                 ws_row: height as u16,
                 ws_col: width as u16,
@@ -37,24 +48,7 @@ impl AsyncRead for PtyReaderImpl {
     }
 }
 
-#[async_trait]
-impl PtyReader for PtyReaderImpl {
-    async fn wait(&mut self) -> Result<i32> {
-        let ec = self._child.wait().map(|es| {
-            es.code()
-                .unwrap_or_else(|| es.signal().map_or(1, |v| 128 + v))
-        })?;
-        Ok(ec)
-    }
-}
-
-pub fn openpty<'w, 'r>(
-    window_size: WindowSize,
-    script: Script<'_, '_>,
-) -> std::io::Result<(
-    impl PtyWriter + Send + Sync + Unpin + 'w,
-    impl PtyReader + Send + Sync + Unpin + 'r,
-)> {
+pub fn openpty(window_size: WindowSize, script: Script<'_, '_>) -> std::io::Result<BoxedPty> {
     let pair = rustix_openpty::openpty(
         None,
         Some(&Winsize {
@@ -105,11 +99,9 @@ pub fn openpty<'w, 'r>(
     let pw = io::dup(&stdio)?;
     io::fcntl_setfd(&pw, io::fcntl_getfd(&pw)? | io::FdFlags::CLOEXEC)?;
     let pr = std::fs::File::from(stdio);
-    Ok((
-        File::from(std::fs::File::from(pw)),
-        PtyReaderImpl {
-            _child: child,
-            f: pr.into(),
-        },
+    Ok(BoxedPty::new(
+        PtyCtlImpl { child },
+        File::from_std(pr),
+        File::from_std(std::fs::File::from(pw)),
     ))
 }

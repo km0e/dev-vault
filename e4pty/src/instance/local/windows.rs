@@ -99,7 +99,7 @@ impl PtyCtl for PtyCtlImpl {
         Ok(())
     }
 
-    async fn wait(&self) -> Result<i32> {
+    async fn wait(&mut self) -> Result<i32> {
         let mut exit_code: u32 = 0;
         unsafe { WaitForSingleObject(self.handle.handle, INFINITE) };
         unsafe { GetExitCodeProcess(self.handle.handle, &mut exit_code as *mut u32) }?;

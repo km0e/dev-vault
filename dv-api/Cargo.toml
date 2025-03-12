@@ -20,7 +20,7 @@ home = { workspace = true, optional = true }
 # russh = { version = "0.50.4", features = [
 #     "async-trait",
 # ], git = "https://github.com/km0e/russh.git", branch = "pty" }
-russh = { version = "0.50.4", features = [
+russh = { version = "0.51.1", features = [
     "async-trait",
 ], path = "../../russh/russh" }
 russh-config = "0.50.0"
