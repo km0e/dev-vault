@@ -1,11 +1,10 @@
 use super::dev::*;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Apt {}
 
-#[async_trait::async_trait]
-impl Am for Apt {
-    async fn install(
+impl Apt {
+    pub async fn install(
         &self,
         u: &User,
         interactor: &DynInteractor,

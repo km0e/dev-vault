@@ -1,4 +1,4 @@
-use resplus::define_error;
+use resplus::define;
 use strum::EnumIs;
 
 #[derive(thiserror::Error, Debug, EnumIs)]
@@ -23,26 +23,26 @@ pub enum Error {
 }
 
 #[cfg(not(windows))]
-define_error!(
-    Error,
+define!(
     russh::Error,
     zbus::Error,
     russh_config::Error,
     russh_sftp::client::error::Error,
     russh::keys::Error,
     std::io::Error,
-    e4pty::ErrorChain
+    e4pty::ErrorChain,
+    Error
 );
 
 #[cfg(windows)]
-define_error!(
-    Error,
+define!(
     russh::Error,
     russh_config::Error,
     russh_sftp::client::error::Error,
     russh::keys::Error,
     std::io::Error,
-    e4pty::ErrorChain
+    e4pty::ErrorChain,
+    Error
 );
 
 impl ErrorChain {

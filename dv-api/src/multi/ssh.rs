@@ -34,7 +34,7 @@ impl SSHSession {
     #[cfg(feature = "path-home")]
     fn expand_home<'a, 'b: 'a>(&'b self, path: &'a str) -> std::borrow::Cow<'a, camino::Utf8Path> {
         if let Some(home) = &self.home {
-            if let Some(path) = path.strip_prefix('~') {
+            if let Some(path) = path.strip_prefix("~/") {
                 return home.join(path).into();
             } else if path == "~" {
                 return camino::Utf8Path::new(home).into();
@@ -92,16 +92,15 @@ impl SSHSession {
 
 #[async_trait]
 impl UserImpl for SSHSession {
-    async fn file_attributes(&self, path: &str) -> Result<(String, FileAttributes)> {
+    async fn file_attributes(&self, path: &str) -> (String, Result<FileAttributes>) {
         #[cfg(feature = "path-home")]
         let path = self.expand_home(path);
         #[cfg(feature = "path-home")]
         let path = path.as_str();
-        Ok(self
-            .sftp
-            .metadata(path)
-            .await
-            .map(|m| (path.to_string(), m))?)
+        (
+            path.to_string(),
+            self.sftp.metadata(path).await.map_err(|e| e.into()),
+        )
     }
     async fn glob_file_meta(&self, path: &str) -> crate::Result<Vec<Metadata>> {
         let metadata = self.sftp.metadata(path).await?;

@@ -1,6 +1,6 @@
 use super::dev::*;
 use dv_api::fs::{CheckInfo, Metadata};
-use tracing::trace;
+use tracing::info;
 
 pub async fn sync(
     ctx: &Context<'_>,
@@ -19,7 +19,7 @@ pub async fn sync(
     if dst_path.is_empty() {
         ctx.interactor.log("dst_path is empty").await;
     }
-    trace!("copy {}:{} -> {}:{}", src_uid, src_path, dst_uid, dst_path);
+    info!("sync {}:{} <- {}:{}", src_uid, src_path, dst_uid, dst_path);
     let src = ctx.get_user(src_uid).await?;
     let dst = ctx.get_user(dst_uid).await?;
 
@@ -54,11 +54,11 @@ pub async fn sync(
         }
     }
 
-    let copy_file = async |src_path: String, dst_path: String| -> LRes<CopyItem> {
-        let res = dst.check_file(&dst_path).await;
+    let copy_file = async |src_path: String, dst_path: &str| -> LRes<CopyItem> {
+        let (dst_path, res) = dst.check_file(dst_path).await;
         let res = match res {
             Err(e) if e.is_not_found() => CopyItem::new(src_path, dst_path),
-            Ok((dst_path, fa)) => {
+            Ok(fa) => {
                 let Some(ts) = fa.mtime else {
                     Err(rune::support::Error::msg("get version fail"))?
                 };
@@ -103,14 +103,14 @@ pub async fn sync(
                 for Metadata { path, .. } in di.files {
                     let dst_path = format!("{}{}", dst_path, path);
                     let src_path = format!("{}{}", src_path, path);
-                    let res = copy_file(src_path, dst_path).await?;
+                    let res = copy_file(src_path, &dst_path).await?;
                     copy_items.push(res);
                 }
             }
             copy_items
         }
         CheckInfo::File(m) => {
-            vec![copy_file(m.path, dst_path).await?]
+            vec![copy_file(m.path, &dst_path).await?]
         }
     };
     let mut res = false;
@@ -131,7 +131,8 @@ pub async fn sync(
             let ts = match ts {
                 Some(ts) => ts,
                 None => {
-                    let (p, fa) = dst.check_file(&dst_path).await?;
+                    let (p, fa) = dst.check_file(&dst_path).await;
+                    let fa = fa?;
                     dst_path = p;
                     fa.mtime
                         .ok_or_else(|| rune::support::Error::msg("get version fail"))?
@@ -181,7 +182,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let user = LocalConfig {
             hid: "local".into(),
-            mount: dir.to_path_buf().try_into().unwrap(),
+            mount: dir.to_string_lossy().to_string(),
         };
         let mut users = HashMap::new();
         users.insert("this".to_string(), user.cast().await.unwrap());

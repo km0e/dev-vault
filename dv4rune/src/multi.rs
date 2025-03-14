@@ -63,3 +63,8 @@ mod dev {
     pub use dv_api::process::Interactor;
     pub use rune::support::Result as LRes;
 }
+
+pub fn register(m: &mut rune::module::Module) -> Result<(), rune::ContextError> {
+    app::register(m)?;
+    Ok(())
+}

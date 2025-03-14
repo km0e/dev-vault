@@ -1,11 +1,10 @@
 use super::dev::*;
 
-#[derive(Default)]
-pub struct Paru {}
+#[derive(Default, Debug)]
+pub struct Yay {}
 
-#[async_trait::async_trait]
-impl Am for Paru {
-    async fn install(
+impl Yay {
+    pub async fn install(
         &self,
         u: &User,
         interactor: &DynInteractor,
@@ -14,9 +13,9 @@ impl Am for Paru {
         super::install(
             u,
             interactor,
-            format!("am=paru;pkgs=\"{}\";", packages),
+            format!("am=yay;pkgs=\"{}\";", packages),
             include_str!("sh/pacman_query.sh"),
-            "paru",
+            "yay",
             &["-S", "--noconfirm"][..],
         )
         .await

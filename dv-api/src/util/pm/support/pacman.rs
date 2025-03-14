@@ -1,11 +1,10 @@
 use super::dev::*;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Pacman {}
 
-#[async_trait::async_trait]
-impl Am for Pacman {
-    async fn install(
+impl Pacman {
+    pub async fn install(
         &self,
         u: &User,
         interactor: &DynInteractor,

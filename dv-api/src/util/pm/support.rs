@@ -1,5 +1,4 @@
 use super::dev::{self, *};
-use crate::util::am::into_boxed_am;
 
 mod apk;
 pub use apk::Apk;
@@ -12,8 +11,8 @@ use tracing::info;
 pub use yay::Yay;
 mod paru;
 pub use paru::Paru;
-
-into_boxed_am!(Apk, Apt, Pacman, Yay, Paru);
+mod winget;
+pub use winget::WinGet;
 
 async fn install(
     u: &User,
@@ -37,7 +36,7 @@ async fn install(
         program: pm,
         args: Box::new(args.chain(pkgs)),
     };
-    let pp = u.pty(s, WindowSize::default()).await?; //TODO:detect
+    let pp = u.pty(s, int.window_size().await).await?; //TODO:detect
     //size
     let ec = int.ask(pp).await?;
     if ec != 0 {

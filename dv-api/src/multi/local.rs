@@ -11,10 +11,13 @@ use tracing::{trace, warn};
 
 mod file;
 
+#[cfg_attr(feature = "rune", derive(rune::Any))]
 #[derive(Debug)]
 pub struct LocalConfig {
+    #[cfg_attr(feature = "rune", rune(get, set))]
     pub hid: String,
-    pub mount: camino::Utf8PathBuf,
+    #[cfg_attr(feature = "rune", rune(get, set))]
+    pub mount: String,
 }
 fn detect() -> Params {
     let user = {
@@ -156,14 +159,17 @@ impl This {
 
 #[async_trait]
 impl UserImpl for This {
-    async fn file_attributes(&self, path: &str) -> Result<(String, FileAttributes)> {
+    async fn file_attributes(&self, path: &str) -> (String, Result<FileAttributes>) {
         #[cfg(feature = "path-home")]
         let path2 = self.expand_home(path);
         #[cfg(not(feature = "path-home"))]
         let path2 = Path::new(path);
-
-        Ok(std::fs::metadata(&path2)
-            .map(|meta| (path2.to_string_lossy().to_string(), (&meta).into()))?)
+        (
+            path2.to_string_lossy().to_string(),
+            std::fs::metadata(&path2)
+                .map(|meta| (&meta).into())
+                .map_err(|e| e.into()),
+        )
     }
     async fn glob_file_meta(&self, path: &str) -> Result<Vec<Metadata>> {
         let path2 = Path::new(path);
@@ -268,7 +274,17 @@ impl UserImpl for This {
     async fn open(&self, path: &str, opt: OpenFlags) -> Result<BoxedFile> {
         let path2 = Path::new(path);
 
-        let file = tokio::fs::OpenOptions::from(opt).open(&path2).await?;
+        let file = loop {
+            match tokio::fs::OpenOptions::from(opt).open(&path2).await {
+                Ok(file) => break Ok(file),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    let parent = path2.parent().unwrap();
+                    tokio::fs::create_dir_all(parent).await?;
+                }
+                Err(e) => break Err(e),
+            }
+        };
+        let file = file?;
         Ok(Box::new(file))
     }
 }

@@ -6,6 +6,7 @@ use crate::user::Output;
 
 #[async_trait]
 pub trait Interactor {
+    async fn window_size(&self) -> WindowSize;
     async fn log(&self, msg: &str);
     async fn ask(&self, pty: BoxedPty) -> crate::Result<i32>;
 }

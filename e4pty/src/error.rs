@@ -1,4 +1,4 @@
-use resplus::define_error;
+use resplus::define;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -15,9 +15,9 @@ pub enum Error {
 }
 
 #[cfg(not(windows))]
-define_error!(Error, std::io::Error, rustix_openpty::rustix::io::Errno);
+define!(std::io::Error, rustix_openpty::rustix::io::Errno, Error);
 
 #[cfg(windows)]
-define_error!(Error, std::io::Error, windows::core::Error);
+define!(std::io::Error, windows::core::Error, Error);
 
 pub type Result<T, E = ErrorChain> = std::result::Result<T, E>;

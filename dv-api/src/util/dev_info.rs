@@ -4,6 +4,7 @@ use std::str::FromStr;
 pub use linux::Linux as LinuxOs;
 use strum::{AsRefStr, Display, EnumIs};
 
+#[cfg_attr(feature = "rune", derive(rune::Any))]
 #[derive(Debug, Clone, Default, Display, EnumIs, AsRefStr, PartialEq)]
 #[strum(serialize_all = "snake_case")]
 pub enum Os {

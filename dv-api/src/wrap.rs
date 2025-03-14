@@ -1,3 +1,4 @@
+use resplus::attach;
 use std::borrow::Cow;
 
 use async_trait::async_trait;
@@ -5,12 +6,11 @@ use e4pty::prelude::*;
 use tracing::info;
 
 use crate::{
-    Result,
+    Package, Pm, Result,
     fs::{BoxedFile, CheckInfo, DirInfo, FileAttributes, Metadata, OpenFlags},
     params::Params,
     process::DynInteractor,
     user::{BoxedUser, Output},
-    util::BoxedAm,
     whatever,
 };
 
@@ -20,13 +20,12 @@ pub trait UserCast {
 }
 
 #[derive(Debug)]
-
 pub struct User {
     pub params: Params,
     pub hid: String,
     pub is_system: bool,
     inner: BoxedUser,
-    am: BoxedAm,
+    pub pm: Pm,
 }
 
 impl User {
@@ -41,19 +40,16 @@ impl User {
             params.user, params.os, params.session, params.mount
         );
         let inner = dev.into();
-        let am = super::util::new_am(&inner, &params.os).await?;
+        let pm = super::util::Pm::new(&inner, &params.os).await?;
         Ok(Self {
             hid: hid.into(),
             params,
             is_system,
             inner,
-            am,
+            pm,
         })
     }
-    fn normalize2<'a>(
-        &self,
-        path: impl Into<&'a camino::Utf8Path>,
-    ) -> crate::Result<Cow<'a, camino::Utf8Path>> {
+    fn normalize2<'a>(&self, path: impl Into<&'a camino::Utf8Path>) -> Cow<'a, camino::Utf8Path> {
         let path: &'a camino::Utf8Path = path.into();
         let path = if path.has_root() {
             path.into()
@@ -64,17 +60,16 @@ impl User {
             };
             path
         };
-        Ok(path)
+        path
     }
-    pub async fn check_file(&self, path: &str) -> Result<(String, FileAttributes)> {
-        self.inner
-            .file_attributes(self.normalize2(path)?.as_str())
-            .await
+    pub async fn check_file(&self, path: &str) -> (String, Result<FileAttributes>) {
+        let path = self.normalize2(path);
+        self.inner.file_attributes(path.as_str()).await
     }
     pub async fn check_path<'a, 'b: 'a>(&'b self, path: &'a str) -> Result<CheckInfo> {
-        let path = self.normalize2(path)?;
-        let path = path.as_str();
-        let (path, fa) = self.inner.file_attributes(path).await?;
+        let path = self.normalize2(path);
+        let (path, fa) = self.inner.file_attributes(path.as_str()).await;
+        let fa = fa?;
         let info = if fa.is_dir() {
             let files = self.inner.glob_file_meta(&path).await?;
             CheckInfo::Dir(DirInfo {
@@ -94,32 +89,34 @@ impl User {
         Ok(info)
     }
     pub async fn check_dir(&self, path: &str) -> Result<DirInfo> {
-        let path = self.normalize2(path)?;
-        let path = path.as_str();
-        let (path, fa) = self.inner.file_attributes(path).await?;
+        let path = self.normalize2(path);
+        let (path, fa) = self.inner.file_attributes(path.as_str()).await;
+        let fa = fa?;
         if !fa.is_dir() {
             whatever!("{} not a directory", path);
         }
         let metadata = self.inner.glob_file_meta(&path).await?;
         Ok(DirInfo {
-            path: path.to_string(),
+            path,
             files: metadata,
         })
     }
     pub async fn copy(&self, src_path: &str, dst: &str, dst_path: &str) -> Result<()> {
-        self.inner
-            .copy(
-                self.normalize2(src_path)?.as_str(),
-                dst,
-                self.normalize2(dst_path)?.as_str(),
-            )
-            .await
+        let src_path = self.normalize2(src_path);
+        let dst_path = self.normalize2(dst_path);
+        attach!(
+            self.inner.copy(src_path.as_str(), dst, dst_path.as_str(),),
+            0,
+            2
+        )
+        .await?;
+        Ok(())
     }
     pub async fn auto(&self, name: &str, action: &str, args: Option<&str>) -> Result<()> {
         self.inner.auto(name, action, args).await
     }
-    pub async fn app(&self, interactor: &DynInteractor, packages: &str) -> crate::Result<bool> {
-        self.am.install(self, interactor, packages).await
+    pub async fn app(&self, interactor: &DynInteractor, packages: &Package) -> crate::Result<bool> {
+        self.pm.install(self, interactor, packages).await
     }
     pub async fn pty(&self, s: Script<'_, '_>, win_size: WindowSize) -> Result<BoxedPty> {
         self.inner.pty(s, win_size).await
@@ -128,6 +125,7 @@ impl User {
         self.inner.exec(s).await
     }
     pub async fn open(&self, path: &str, opt: OpenFlags) -> crate::Result<BoxedFile> {
-        self.inner.open(self.normalize2(path)?.as_str(), opt).await
+        let path = self.normalize2(path);
+        attach!(self.inner.open(path.as_str(), opt), 0).await
     }
 }

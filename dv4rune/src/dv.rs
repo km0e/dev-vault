@@ -1,9 +1,9 @@
 use std::{collections::HashMap, future::IntoFuture, path::Path};
 
-use dv_api::{Os, User, UserCast, process::Interactor};
+use dv_api::{LocalConfig, Os, Package, SSHConfig, User, UserCast, process::Interactor};
 use rune::{
     Any,
-    runtime::{self, Mut, Object, Ref, VmError},
+    runtime::{self, Mut, Object, Ref},
     support,
 };
 use tracing::info;
@@ -12,7 +12,6 @@ use crate::{
     cache::SqliteCache,
     interactor::TermInteractor,
     multi::{Context, action},
-    utils::{LogFutResult, LogResult, field, obj_take2, obj2, value2},
 };
 use support::Result as LRes;
 
@@ -22,7 +21,7 @@ struct Device {
     users: Vec<String>,
 }
 
-#[derive(Debug, Any)]
+#[derive(Any)]
 pub struct Dv {
     dry_run: bool,
     devices: HashMap<String, Device>,
@@ -46,64 +45,13 @@ impl Dv {
     }
 }
 impl Dv {
-    #[rune::function(path = Self::add_current)]
-    async fn add_current(mut this: Mut<Self>, id: Ref<str>, mut user: Mut<Object>) -> LRes<()> {
-        let id = id.as_ref();
-        use dv_api::LocalConfig;
-        let user =
-            obj2!(LocalConfig, &this.context(), user, hid@("local",), mount@("~/.config/dv",));
-        let u = user.cast().await.unwrap();
-        if this.users.insert(id.to_string(), u).is_some() {
-            panic!("user already exists");
-        }
-        let d = this.devices.entry(id.to_string()).or_default();
-        d.users.push(id.to_string());
-        let u = &this.users[id];
-        this.interactor
-            .log(&format!(
-                "local user: {:<10}, hid: {:<10}, os: {:<8}",
-                id,
-                u.hid,
-                u.params.os.as_ref()
-            ))
-            .await;
-        Ok(())
-    }
-    #[rune::function(path = Self::add_ssh_user)]
-    async fn add_ssh_user(mut this: Mut<Self>, id: Ref<str>, mut user: Mut<Object>) -> LRes<()> {
-        use dv_api::SSHConfig;
-        let id = id.as_ref();
-        let user = obj2!(SSHConfig, &this.context(), user, hid@(id,), host@(id,), is_system@(bool),os@("linux", Os::from), @default);
-        info!("ssh user: {:?}", user);
-        let u = user.cast().await.unwrap();
-        let is_system = u.is_system;
-        if this.users.insert(id.to_owned(), u).is_some() {
-            panic!("user already exists");
-        }
-        let d = this.devices.entry(id.to_owned()).or_default();
-        match (is_system, &mut d.system) {
-            (true, Some(_)) => panic!("system user already exists"),
-            (true, None) => d.system = Some(id.to_owned()),
-            (false, _) => d.users.push(id.to_owned()),
-        }
-        let u = &this.users[id];
-        this.interactor
-            .log(&format!(
-                "ssh   user: {:<10}, hid: {:<10}, os: {:<8}",
-                id,
-                u.hid,
-                u.params.os.as_ref()
-            ))
-            .await;
-        Ok(())
-    }
     #[rune::function(path = Self::user_params)]
     async fn user_params(this: Ref<Self>, id: Ref<str>) -> LRes<Object> {
         let user = this.context().get_user(id).await?;
         let mut obj = Object::new();
         obj.insert(
             rune::alloc::String::try_from("os")?,
-            rune::to_value(user.params.os.as_ref())?,
+            rune::to_value(user.params.os.clone())?,
         )?;
         obj.insert(
             rune::alloc::String::try_from("hid")?,
@@ -136,20 +84,6 @@ impl Dv {
         commands: Ref<str>,
     ) -> LRes<bool> {
         crate::multi::exec(&this.context(), uid, shell.as_deref(), commands).await
-    }
-    #[rune::function(path = Self::app)]
-    async fn app(this: Ref<Self>, uid: Ref<str>, package: runtime::Vec) -> LRes<bool> {
-        let ctx = this.context();
-        let res: Result<String, VmError> =
-            package.into_iter().try_fold(String::new(), |mut acc, n| {
-                if !acc.is_empty() {
-                    acc.push(' ');
-                }
-                acc.push_str(&value2!(n)?);
-                Ok(acc)
-            });
-
-        crate::multi::app(&ctx, uid, res.log(ctx.interactor).await?).await
     }
     #[rune::function(path = Self::auto)]
     async fn auto(
@@ -206,7 +140,6 @@ impl Dv {
             dst_uid,
             dst_path.as_ref(),
         )
-        .log(&this.interactor)
         .await
     }
     #[rune::function(path = Self::refresh)]
@@ -217,13 +150,97 @@ impl Dv {
     }
 }
 
+#[rune::function(free,path = LocalConfig::new)]
+fn local_config_new() -> LocalConfig {
+    LocalConfig {
+        hid: "local".to_string(),
+        mount: "~/.local/share/dv".into(),
+    }
+}
+
+impl Dv {
+    #[rune::function(path = Self::add_current)]
+    async fn add_current(mut this: Mut<Self>, id: Ref<str>, user: LocalConfig) -> LRes<()> {
+        let id = id.as_ref();
+        let u = user.cast().await.unwrap();
+        if this.users.insert(id.to_string(), u).is_some() {
+            panic!("user already exists");
+        }
+        let d = this.devices.entry(id.to_string()).or_default();
+        d.users.push(id.to_string());
+        let u = &this.users[id];
+        this.interactor
+            .log(&format!(
+                "local user: {:<10}, hid: {:<10}, os: {:<8}",
+                id,
+                u.hid,
+                u.params.os.as_ref()
+            ))
+            .await;
+        Ok(())
+    }
+}
+
+#[rune::function(free,path = SSHConfig::new)]
+fn ssh_config_new(id: &str) -> SSHConfig {
+    SSHConfig {
+        hid: "local".to_string(),
+        mount: "~/.local/share/dv".into(),
+        host: id.to_string(),
+        is_system: false,
+        os: Os::Linux(dv_api::LinuxOs::Unknown),
+        passwd: None,
+    }
+}
+
+impl Dv {
+    #[rune::function(path = Self::add_ssh_user)]
+    async fn add_ssh_user(mut this: Mut<Self>, id: Ref<str>, user: SSHConfig) -> LRes<()> {
+        let id = id.as_ref();
+        info!("ssh user: {:?}", user);
+        let u = user.cast().await.unwrap();
+        let is_system = u.is_system;
+        if this.users.insert(id.to_owned(), u).is_some() {
+            panic!("user already exists");
+        }
+        let d = this.devices.entry(id.to_owned()).or_default();
+        match (is_system, &mut d.system) {
+            (true, Some(_)) => panic!("system user already exists"),
+            (true, None) => d.system = Some(id.to_owned()),
+            (false, _) => d.users.push(id.to_owned()),
+        }
+        let u = &this.users[id];
+        this.interactor
+            .log(&format!(
+                "ssh   user: {:<10}, hid: {:<10}, os: {:<8}",
+                id,
+                u.hid,
+                u.params.os.as_ref()
+            ))
+            .await;
+        Ok(())
+    }
+}
+
+impl Dv {
+    #[rune::function(path = Self::app)]
+    async fn app(this: Ref<Self>, uid: Ref<str>, packages: Package) -> LRes<bool> {
+        let ctx = this.context();
+        crate::multi::app(&ctx, uid, packages).await
+    }
+}
 pub fn module() -> Result<rune::Module, rune::ContextError> {
     let mut m = rune::Module::default();
     m.ty::<Dv>()?;
+    m.ty::<LocalConfig>()?;
+    m.function_meta(local_config_new)?;
     m.function_meta(Dv::add_current)?;
+    m.ty::<SSHConfig>()?;
+    m.function_meta(ssh_config_new)?;
     m.function_meta(Dv::add_ssh_user)?;
     m.function_meta(Dv::user_params)?;
     m.function_meta(Dv::copy)?;
+    crate::multi::register(&mut m)?;
     m.function_meta(Dv::app)?;
     m.function_meta(Dv::auto)?;
     m.function_meta(Dv::exec)?;

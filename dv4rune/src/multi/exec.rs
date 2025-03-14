@@ -1,5 +1,5 @@
 use super::dev::*;
-use dv_api::process::{Script, WindowSize};
+use dv_api::process::Script;
 
 pub async fn exec(
     ctx: &Context<'_>,
@@ -15,7 +15,7 @@ pub async fn exec(
     let user = ctx.get_user(uid).await?;
     if !ctx.dry_run {
         let pp = user
-            .pty(script, WindowSize::default())
+            .pty(script, ctx.interactor.window_size().await)
             .log(ctx.interactor)
             .await?;
 

@@ -9,12 +9,20 @@ use crate::{Result, util::Os, whatever};
 
 use super::{Client, SSHSession, dev::*};
 
+#[cfg_attr(feature = "rune", derive(rune::Any))]
 #[derive(Debug, Default)]
 pub struct SSHConfig {
+    #[cfg_attr(feature = "rune", rune(get, set))]
     pub hid: String,
+    #[cfg_attr(feature = "rune", rune(get, set))]
+    pub mount: String,
+    #[cfg_attr(feature = "rune", rune(get, set))]
     pub host: String,
+    #[cfg_attr(feature = "rune", rune(get, set))]
     pub is_system: bool,
+    #[cfg_attr(feature = "rune", rune(get, set))]
     pub os: Os,
+    #[cfg_attr(feature = "rune", rune(get, set))]
     pub passwd: Option<String>,
 }
 
@@ -32,6 +40,7 @@ impl UserCast for SSHConfig {
     async fn cast(self) -> Result<User> {
         let (h, user) = connect(self.host, self.passwd).await?;
         let mut p = Params::new(user);
+        p.mount(self.mount);
         if !self.os.is_unknown() {
             p.os(self.os);
         }
@@ -107,13 +116,12 @@ async fn connect(host: String, passwd: Option<String>) -> Result<(Handle<Client>
         }
         warn!("authenticate_password failed");
     }
-    // Error::whatever!(
-    //     "ssh connect {} {} {} failed",
-    //     host,
-    //     host_cfg.host_name,
-    //     host_cfg.user
-    // );
-    unimplemented!()
+    whatever!(
+        "ssh connect {} {} {} failed",
+        host,
+        host_cfg.host_name,
+        host_cfg.user
+    )
 }
 
 #[cfg(feature = "path-home")]

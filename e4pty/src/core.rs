@@ -11,28 +11,35 @@ pub struct WindowSize {
     pub cols: u16,
 }
 
-impl Default for WindowSize {
-    fn default() -> Self {
-        Self { rows: 1, cols: 1 } // Can't be 0 in windows
-    }
+#[async_trait]
+pub trait PtyWriter: AsyncWrite {
+    async fn window_change(&self, width: u16, height: u16) -> Result<()>;
 }
+
+pub type BoxedPtyWriter = Box<dyn PtyWriter + Send + Sync + Unpin>;
+
+pub trait PtyReader: AsyncRead {}
+
+pub type BoxedPtyReader = Box<dyn PtyReader + Send + Sync + Unpin>;
+
 #[async_trait]
 pub trait PtyCtl {
-    async fn window_change(&self, width: u32, height: u32) -> Result<()>;
     async fn wait(&mut self) -> Result<i32>;
 }
 
+pub type BoxedPtyCtl = Box<dyn PtyCtl + Send + Sync + Unpin>;
+
 pub struct BoxedPty {
-    pub ctl: Box<dyn PtyCtl + Send + Sync + Unpin>,
-    pub writer: Box<dyn AsyncWrite + Send + Sync + Unpin>,
-    pub reader: Box<dyn AsyncRead + Send + Sync + Unpin>,
+    pub ctl: BoxedPtyCtl,
+    pub writer: BoxedPtyWriter,
+    pub reader: BoxedPtyReader,
 }
 
 impl BoxedPty {
     pub fn new(
         ctl: impl PtyCtl + Send + Sync + Unpin + 'static,
-        writer: impl AsyncWrite + Send + Sync + Unpin + 'static,
-        reader: impl AsyncRead + Send + Sync + Unpin + 'static,
+        writer: impl PtyWriter + Send + Sync + Unpin + 'static,
+        reader: impl PtyReader + Send + Sync + Unpin + 'static,
     ) -> Self {
         Self {
             ctl: Box::new(ctl),
@@ -40,29 +47,10 @@ impl BoxedPty {
             reader: Box::new(reader),
         }
     }
-    pub fn destruct(
-        self,
-    ) -> (
-        Box<dyn PtyCtl + Send + Sync + Unpin>,
-        Box<dyn AsyncWrite + Send + Sync + Unpin>,
-        Box<dyn AsyncRead + Send + Sync + Unpin>,
-    ) {
+    pub fn destruct(self) -> (BoxedPtyCtl, BoxedPtyWriter, BoxedPtyReader) {
         (self.ctl, self.writer, self.reader)
     }
 }
-// #[async_trait]
-// pub trait PtyWriter: AsyncWrite {
-//     async fn window_change(&self, width: u32, height: u32) -> Result<()>;
-// }
-
-// pub type BoxedPtyWriter = Box<dyn PtyWriter + Send + Sync + Unpin>;
-
-// #[async_trait]
-// pub trait PtyReader: AsyncRead {
-//     async fn wait(&mut self) -> Result<i32>;
-// }
-
-// pub type BoxedPtyReader = Box<dyn PtyReader + Send + Sync + Unpin>;
 
 pub enum ScriptExecutor {
     Sh,

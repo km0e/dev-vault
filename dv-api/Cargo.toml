@@ -10,7 +10,8 @@ tokio.workspace = true
 tracing.workspace = true
 async-trait.workspace = true
 
-e4pty = { version = "0.1.2" }
+rune = { version = "0.13.4", optional = true }
+e4pty = { version = "0.1.2", path = "../e4pty" }
 autox = { path = "../autox" }
 bitflags = "2.9.0"
 tempfile = "3.18.0"
@@ -46,4 +47,5 @@ zbus = "5.5.0"
 [features]
 default = []
 path-home = ["dep:home"]
-full = ["path-home"]
+rune = ["dep:rune"]
+full = ["path-home", "rune"]

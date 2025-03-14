@@ -2,7 +2,7 @@ use std::os::{fd::AsRawFd, unix::process::ExitStatusExt};
 
 use async_trait::async_trait;
 use rustix_openpty::rustix::termios::{self, Winsize};
-use tokio::{fs::File, io::AsyncRead};
+use tokio::fs::File;
 
 use crate::{core::*, error::Result};
 
@@ -19,12 +19,16 @@ impl PtyCtl for PtyCtlImpl {
         })?;
         Ok(ec)
     }
-    async fn window_change(&self, width: u32, height: u32) -> Result<()> {
+}
+
+#[async_trait]
+impl PtyWriter for File {
+    async fn window_change(&self, width: u16, height: u16) -> Result<()> {
         termios::tcsetwinsize(
-            self.child.stdin.as_ref().unwrap(),
+            self,
             termios::Winsize {
-                ws_row: height as u16,
-                ws_col: width as u16,
+                ws_row: height,
+                ws_col: width,
                 ws_xpixel: 0, // TODO: ws_xpixel:
                 ws_ypixel: 0, // TODO: ws_ypixel:
             },
@@ -33,20 +37,7 @@ impl PtyCtl for PtyCtlImpl {
     }
 }
 
-struct PtyReaderImpl {
-    _child: std::process::Child,
-    f: File,
-}
-
-impl AsyncRead for PtyReaderImpl {
-    fn poll_read(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        std::pin::Pin::new(&mut self.f).poll_read(cx, buf)
-    }
-}
+impl PtyReader for File {}
 
 pub fn openpty(window_size: WindowSize, script: Script<'_, '_>) -> std::io::Result<BoxedPty> {
     let pair = rustix_openpty::openpty(
@@ -101,7 +92,7 @@ pub fn openpty(window_size: WindowSize, script: Script<'_, '_>) -> std::io::Resu
     let pr = std::fs::File::from(stdio);
     Ok(BoxedPty::new(
         PtyCtlImpl { child },
-        File::from_std(pr),
         File::from_std(std::fs::File::from(pw)),
+        File::from_std(pr),
     ))
 }
