@@ -125,7 +125,7 @@ async fn connect(host: String, passwd: Option<String>) -> Result<(Handle<Client>
 }
 
 #[cfg(feature = "path-home")]
-type DetectResult = Result<Option<camino::Utf8PathBuf>>;
+type DetectResult = Result<Option<String>>;
 
 #[cfg(not(feature = "path-home"))]
 type DetectResult = Result<()>;
@@ -183,7 +183,7 @@ async fn detect(h: &Handle<Client>, p: &mut Params) -> DetectResult {
         p.os(os);
     }
     #[cfg(feature = "path-home")]
-    let res = Ok(home.map(|h| h.into()));
+    let res = Ok(home);
     #[cfg(not(feature = "path-home"))]
     let res = Ok(());
     res

@@ -6,7 +6,10 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+auto-launch = "0.5.0"
 tracing.workspace = true
+thiserror = "2.0.12"
+
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.60.0", features = [

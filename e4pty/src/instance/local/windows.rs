@@ -4,13 +4,13 @@ use std::io::{Error, Write};
 use std::mem;
 use std::os::windows::ffi::OsStrExt;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tracing::{debug, info};
+use tracing::debug;
 
 use windows::Win32::Foundation::{HANDLE, MAX_PATH};
 use windows::Win32::Storage::FileSystem::{ReadFile, SearchPathW, WriteFile};
 use windows::Win32::System::Console::*;
-use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 use windows::Win32::System::Pipes::CreatePipe;
 use windows::Win32::System::Threading::*;
 use windows::core::*;
@@ -18,17 +18,29 @@ use windows::core::*;
 use crate::Result;
 use crate::core::*;
 
-#[derive(Clone)]
+type ResizeFn = Box<dyn Send + Sync + Fn(HPCON, WindowSize) -> windows::core::Result<()>>;
+type CreateFn = Box<dyn Fn(WindowSize, HANDLE, HANDLE) -> windows::core::Result<HPCON>>;
+type CloseFn = Box<dyn Fn(HPCON)>;
 struct ConptyApi {
-    #[allow(clippy::type_complexity)]
-    create: Arc<Box<dyn Fn(WindowSize, HANDLE, HANDLE) -> windows::core::Result<HPCON>>>,
-    #[allow(clippy::type_complexity)]
-    resize: Arc<Box<dyn Fn(HPCON, WindowSize) -> windows::core::Result<()>>>,
-    close: Arc<Box<dyn Fn(HPCON)>>,
+    create: CreateFn,
+    resize: ResizeFn,
+    close: CloseFn,
 }
 
 struct PtyReaderImpl {
+    prevent_deadlock: Arc<AtomicBool>,
     out: SafeHandle,
+}
+
+impl Drop for PtyReaderImpl {
+    fn drop(&mut self) {
+        while !self
+            .prevent_deadlock
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            std::thread::yield_now();
+        }
+    }
 }
 
 impl AsyncRead for PtyReaderImpl {
@@ -50,9 +62,27 @@ impl AsyncRead for PtyReaderImpl {
         std::task::Poll::Ready(Ok(()))
     }
 }
+
+impl PtyReader for PtyReaderImpl {}
+
 struct PtyWriterImpl {
+    prevent_deadlock: Arc<AtomicBool>,
+    hpcon: HPCON,
+    resizer: ResizeFn,
     in_: SafeHandle,
 }
+
+impl Drop for PtyWriterImpl {
+    fn drop(&mut self) {
+        while !self
+            .prevent_deadlock
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            std::thread::yield_now();
+        }
+    }
+}
+
 impl AsyncWrite for PtyWriterImpl {
     fn poll_write(
         self: std::pin::Pin<&mut Self>,
@@ -82,27 +112,44 @@ impl AsyncWrite for PtyWriterImpl {
     }
 }
 
-pub struct PtyCtlImpl {
-    handle: Conpty,
-}
-
 #[async_trait]
-impl PtyCtl for PtyCtlImpl {
-    async fn window_change(&self, width: u32, height: u32) -> Result<()> {
-        (self.handle.api.resize)(
-            self.handle.hpcon,
+impl PtyWriter for PtyWriterImpl {
+    async fn window_change(&self, width: u16, height: u16) -> Result<()> {
+        (self.resizer)(
+            self.hpcon,
             WindowSize {
-                rows: height as u16,
-                cols: width as u16,
+                rows: height,
+                cols: width,
             },
         )?;
         Ok(())
     }
+}
 
+pub struct PtyCtlImpl {
+    prevent_deadlock: Arc<AtomicBool>,
+    pub hpcon: HPCON,
+    pub handle: HANDLE,
+    pub close: CloseFn,
+}
+
+impl Drop for PtyCtlImpl {
+    fn drop(&mut self) {
+        (self.close)(self.hpcon);
+        self.prevent_deadlock
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+}
+
+unsafe impl Send for PtyCtlImpl {}
+unsafe impl Sync for PtyCtlImpl {}
+
+#[async_trait]
+impl PtyCtl for PtyCtlImpl {
     async fn wait(&mut self) -> Result<i32> {
         let mut exit_code: u32 = 0;
-        unsafe { WaitForSingleObject(self.handle.handle, INFINITE) };
-        unsafe { GetExitCodeProcess(self.handle.handle, &mut exit_code as *mut u32) }?;
+        unsafe { WaitForSingleObject(self.handle, INFINITE) };
+        unsafe { GetExitCodeProcess(self.handle, &mut exit_code as *mut u32) }?;
         debug!("exit code: {}", exit_code);
         Ok(exit_code as i32)
     }
@@ -110,78 +157,17 @@ impl PtyCtl for PtyCtlImpl {
 
 impl ConptyApi {
     fn new() -> Self {
-        match Self::load_conpty() {
-            Some(conpty) => {
-                info!("Using conpty.dll for pseudoconsole");
-                conpty
-            }
-            None => {
-                info!("Using Windows API for pseudoconsole");
-                Self {
-                    create: Arc::new(Box::new(
-                        |win_size: WindowSize, conin: HANDLE, conout: HANDLE| unsafe {
-                            CreatePseudoConsole(win_size.into(), conin, conout, 0)
-                        },
-                    )),
-                    resize: Arc::new(Box::new(|hpcon: HPCON, win_size: WindowSize| unsafe {
-                        ResizePseudoConsole(hpcon, win_size.into())
-                    })),
-                    close: Arc::new(Box::new(|hpcon: HPCON| unsafe {
-                        ClosePseudoConsole(hpcon)
-                    })),
-                }
-            }
+        Self {
+            create: Box::new(
+                |win_size: WindowSize, conin: HANDLE, conout: HANDLE| unsafe {
+                    CreatePseudoConsole(win_size.into(), conin, conout, 0)
+                },
+            ),
+            resize: Box::new(|hpcon: HPCON, win_size: WindowSize| unsafe {
+                ResizePseudoConsole(hpcon, win_size.into())
+            }),
+            close: Box::new(|hpcon: HPCON| unsafe { ClosePseudoConsole(hpcon) }),
         }
-    }
-
-    /// Try loading ConptyApi from conpty.dll library.
-    fn load_conpty() -> Option<Self> {
-        type LoadedFn = unsafe extern "system" fn() -> isize;
-        unsafe {
-            let hmodule = LoadLibraryW(w!("conpty.dll")).ok()?;
-            let create_fn = GetProcAddress(hmodule, s!("CreatePseudoConsole"))?;
-            let resize_fn = GetProcAddress(hmodule, s!("ResizePseudoConsole"))?;
-            let close_fn = GetProcAddress(hmodule, s!("ClosePseudoConsole"))?;
-            let create_fn = Box::new(move |win_size: WindowSize, conin: HANDLE, conout: HANDLE| {
-                let mut result__ = core::mem::zeroed();
-
-                mem::transmute::<
-                    LoadedFn,
-                    unsafe extern "system" fn(COORD, HANDLE, HANDLE, u32, *mut HPCON) -> HRESULT,
-                >(create_fn)(win_size.into(), conin, conout, 0, &mut result__)
-                .map(|| result__)
-            });
-            let resize_fn = Box::new(move |hpcon: HPCON, win_size: WindowSize| {
-                mem::transmute::<LoadedFn, unsafe extern "system" fn(HPCON, COORD) -> HRESULT>(
-                    resize_fn,
-                )(hpcon, win_size.into())
-                .map(|| ())
-            });
-            let close_fn = Box::new(move |hpcon: HPCON| {
-                mem::transmute::<LoadedFn, unsafe extern "system" fn(HPCON)>(close_fn)(hpcon)
-            });
-            Some(Self {
-                create: Arc::new(create_fn),
-                resize: Arc::new(resize_fn),
-                close: Arc::new(close_fn),
-            })
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct Conpty {
-    pub hpcon: HPCON,
-    pub handle: HANDLE,
-    api: ConptyApi,
-}
-
-unsafe impl Send for Conpty {}
-unsafe impl Sync for Conpty {}
-
-impl Drop for Conpty {
-    fn drop(&mut self) {
-        (self.api.close)(self.hpcon);
     }
 }
 
@@ -346,16 +332,24 @@ pub fn openpty(window_size: WindowSize, command: Script<'_, '_>) -> std::io::Res
     unsafe {
         DeleteProcThreadAttributeList(startup_info_ex.lpAttributeList);
     }
-
-    let conpty = Conpty {
-        handle: proc_info.hProcess,
-        hpcon: pty_handle as HPCON,
-        api,
-    };
+    let prevent_deadlock = Arc::new(AtomicBool::new(false));
     Ok(BoxedPty::new(
-        PtyCtlImpl { handle: conpty },
-        PtyWriterImpl { in_: conin },
-        PtyReaderImpl { out: conout },
+        PtyCtlImpl {
+            prevent_deadlock: prevent_deadlock.clone(),
+            hpcon: pty_handle,
+            handle: proc_info.hProcess,
+            close: api.close,
+        },
+        PtyWriterImpl {
+            prevent_deadlock: prevent_deadlock.clone(),
+            hpcon: pty_handle,
+            resizer: api.resize,
+            in_: conin,
+        },
+        PtyReaderImpl {
+            prevent_deadlock,
+            out: conout,
+        },
     ))
 }
 

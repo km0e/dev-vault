@@ -5,7 +5,7 @@ pub struct Params {
     pub user: String,
     pub os: Os,
     pub session: Option<String>,
-    pub mount: Option<camino::Utf8PathBuf>,
+    pub mount: Option<String>,
 }
 
 impl Params {
@@ -23,7 +23,7 @@ impl Params {
         self.session = Some(session.into());
         self
     }
-    pub fn mount(&mut self, mount: impl Into<camino::Utf8PathBuf>) -> &mut Self {
+    pub fn mount(&mut self, mount: impl Into<String>) -> &mut Self {
         self.mount = Some(mount.into());
         self
     }

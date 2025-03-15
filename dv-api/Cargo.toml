@@ -29,7 +29,6 @@ russh-config = "0.50.0"
 russh-sftp = { git = "https://github.com/km0e/russh-sftp.git" }
 rustix = { version = "1.0.2", features = ["pty"] }
 walkdir = "2.5.0"
-camino = "1.1.9"
 strum = { version = "0.27.1", features = ["derive"] }
 thiserror = "2.0.12"
 resplus = { version = "0.1.1", features = ["full"] }

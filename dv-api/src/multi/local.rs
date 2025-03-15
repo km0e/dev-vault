@@ -239,14 +239,14 @@ impl UserImpl for This {
                 .setup(name, args)
                 .await
                 .map_err(|e| Error::Unknown(e.to_string()))?,
-            ("enable", None) => self
-                .autox
-                .enable(name)
-                .await
-                .map_err(|e| Error::Unknown(e.to_string()))?,
             ("reload", None) => self
                 .autox
                 .reload(name)
+                .await
+                .map_err(|e| Error::Unknown(e.to_string()))?,
+            ("destroy", None) => self
+                .autox
+                .destroy(name)
                 .await
                 .map_err(|e| Error::Unknown(e.to_string()))?,
             _ => unimplemented!(),

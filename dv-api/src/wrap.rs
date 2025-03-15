@@ -3,7 +3,7 @@ use std::borrow::Cow;
 
 use async_trait::async_trait;
 use e4pty::prelude::*;
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::{
     Package, Pm, Result,
@@ -49,13 +49,13 @@ impl User {
             pm,
         })
     }
-    fn normalize2<'a>(&self, path: impl Into<&'a camino::Utf8Path>) -> Cow<'a, camino::Utf8Path> {
-        let path: &'a camino::Utf8Path = path.into();
-        let path = if path.has_root() {
+    fn normalize2<'a>(&self, path: impl Into<&'a str>) -> Cow<'a, str> {
+        let path: &'a str = path.into();
+        let path = if path.starts_with("/") {
             path.into()
         } else {
             let path = match (path.starts_with("~"), self.params.mount.as_ref()) {
-                (false, Some(mount)) => mount.join(path).into(),
+                (false, Some(mount)) => format!("{}/{}", mount, path).into(),
                 _ => Cow::Borrowed(path),
             };
             path
@@ -64,11 +64,12 @@ impl User {
     }
     pub async fn check_file(&self, path: &str) -> (String, Result<FileAttributes>) {
         let path = self.normalize2(path);
-        self.inner.file_attributes(path.as_str()).await
+        self.inner.file_attributes(&path).await
     }
     pub async fn check_path<'a, 'b: 'a>(&'b self, path: &'a str) -> Result<CheckInfo> {
         let path = self.normalize2(path);
-        let (path, fa) = self.inner.file_attributes(path.as_str()).await;
+        debug!("check_path:{}", path);
+        let (path, fa) = self.inner.file_attributes(&path).await;
         let fa = fa?;
         let info = if fa.is_dir() {
             let files = self.inner.glob_file_meta(&path).await?;
@@ -90,7 +91,7 @@ impl User {
     }
     pub async fn check_dir(&self, path: &str) -> Result<DirInfo> {
         let path = self.normalize2(path);
-        let (path, fa) = self.inner.file_attributes(path.as_str()).await;
+        let (path, fa) = self.inner.file_attributes(&path).await;
         let fa = fa?;
         if !fa.is_dir() {
             whatever!("{} not a directory", path);
@@ -104,12 +105,7 @@ impl User {
     pub async fn copy(&self, src_path: &str, dst: &str, dst_path: &str) -> Result<()> {
         let src_path = self.normalize2(src_path);
         let dst_path = self.normalize2(dst_path);
-        attach!(
-            self.inner.copy(src_path.as_str(), dst, dst_path.as_str(),),
-            0,
-            2
-        )
-        .await?;
+        attach!(self.inner.copy(&src_path, dst, &dst_path,), 0, 2).await?;
         Ok(())
     }
     pub async fn auto(&self, name: &str, action: &str, args: Option<&str>) -> Result<()> {
@@ -126,6 +122,6 @@ impl User {
     }
     pub async fn open(&self, path: &str, opt: OpenFlags) -> crate::Result<BoxedFile> {
         let path = self.normalize2(path);
-        attach!(self.inner.open(path.as_str(), opt), 0).await
+        attach!(self.inner.open(&path, opt), 0).await
     }
 }

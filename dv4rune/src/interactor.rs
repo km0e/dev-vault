@@ -28,11 +28,6 @@ pub struct TermInteractor {
     excl_stdout: Mutex<()>,
 }
 
-#[cfg(windows)]
-fn setup_stdin_nonblock() -> std::io::Result<()> {
-    Ok(())
-}
-
 impl TermInteractor {
     pub fn new() -> std::io::Result<Self> {
         let sh = SyncHandle::default();
@@ -111,68 +106,6 @@ impl Interactor for TermInteractor {
                 .map_err(|e| dv_api::Error::Unknown(e.to_string()))?;
             Ok(es)
         }
-    }
-}
-#[cfg(windows)]
-fn noblock_stdin() -> impl AsyncRead {
-    use windows::Win32::{
-        Storage::FileSystem::ReadFile,
-        System::Console::{GetStdHandle, STD_INPUT_HANDLE},
-    };
-
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let mut buf = [0; 1024];
-        let hin = unsafe { GetStdHandle(STD_INPUT_HANDLE).unwrap() };
-        loop {
-            let mut bytes = 0;
-            unsafe {
-                ReadFile(hin, Some(&mut buf), Some(&mut bytes), None).unwrap();
-            }
-            if bytes == 0 {
-                break;
-            }
-            debug!("read {} bytes from stdin", bytes);
-            tx.send(buf[..bytes as usize].to_vec()).unwrap();
-        }
-    });
-    struct AsyncStdin {
-        rx: std::sync::mpsc::Receiver<Vec<u8>>,
-        buffer: (Vec<u8>, usize),
-    }
-    impl AsyncRead for AsyncStdin {
-        fn poll_read(
-            mut self: std::pin::Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-            buf: &mut tokio::io::ReadBuf<'_>,
-        ) -> std::task::Poll<std::io::Result<()>> {
-            debug!("poll_read");
-            if self.buffer.1 == self.buffer.0.len() {
-                debug!("try to read from stdin");
-                match self.rx.try_recv() {
-                    Ok(data) => {
-                        self.buffer.0 = data;
-                        self.buffer.1 = 0;
-                    }
-                    Err(std::sync::mpsc::TryRecvError::Empty) => {
-                        cx.waker().wake_by_ref();
-                        return std::task::Poll::Pending;
-                    }
-                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        return std::task::Poll::Ready(Ok(()));
-                    }
-                }
-            }
-            let n = std::cmp::min(buf.remaining(), self.buffer.0.len() - self.buffer.1);
-            buf.put_slice(&self.buffer.0[self.buffer.1..self.buffer.1 + n]);
-            self.buffer.1 += n;
-            debug!("sync {} bytes from stdin", n);
-            std::task::Poll::Ready(Ok(()))
-        }
-    }
-    AsyncStdin {
-        rx,
-        buffer: (vec![], 0),
     }
 }
 

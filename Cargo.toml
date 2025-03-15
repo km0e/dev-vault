@@ -1,5 +1,4 @@
 [workspace]
-# members = ["autox", "dv-api"]
 members = ["autox", "dv-api", "dv4rune", "e4pty"]
 resolver = "3"
 

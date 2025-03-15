@@ -7,9 +7,8 @@ pub enum Error {
     SSHConfig(#[from] russh_config::Error),
     #[error("ssh error: {0}")]
     SSH(#[from] russh::Error),
-    #[cfg(not(windows))]
-    #[error("zbus error: {0}")]
-    Systemd(#[from] zbus::Error),
+    #[error("autox error: {0}")]
+    AutoX(#[from] autox::Error),
     #[error("sftp error: {0}")]
     SFTP(#[from] russh_sftp::client::error::Error),
     #[error("ssh key error: {0}")]
@@ -22,19 +21,6 @@ pub enum Error {
     Unknown(String),
 }
 
-#[cfg(not(windows))]
-define!(
-    russh::Error,
-    zbus::Error,
-    russh_config::Error,
-    russh_sftp::client::error::Error,
-    russh::keys::Error,
-    std::io::Error,
-    e4pty::ErrorChain,
-    Error
-);
-
-#[cfg(windows)]
 define!(
     russh::Error,
     russh_config::Error,
@@ -42,6 +28,7 @@ define!(
     russh::keys::Error,
     std::io::Error,
     e4pty::ErrorChain,
+    autox::Error,
     Error
 );
 
@@ -71,4 +58,5 @@ macro_rules! whatever {
     };
 }
 
+pub use resplus::{attach, flog};
 pub use whatever;

@@ -26,21 +26,21 @@ pub(crate) struct SSHSession {
     session: client::Handle<Client>,
     sftp: SftpSession,
     #[cfg(feature = "path-home")]
-    home: Option<camino::Utf8PathBuf>,
+    home: Option<String>,
     command_util: BoxedCommandUtil<Self>,
 }
 
 impl SSHSession {
     #[cfg(feature = "path-home")]
-    fn expand_home<'a, 'b: 'a>(&'b self, path: &'a str) -> std::borrow::Cow<'a, camino::Utf8Path> {
+    fn expand_home<'a, 'b: 'a>(&'b self, path: &'a str) -> std::borrow::Cow<'a, str> {
         if let Some(home) = &self.home {
             if let Some(path) = path.strip_prefix("~/") {
-                return home.join(path).into();
+                return format!("{}/{}", home, path).into();
             } else if path == "~" {
-                return camino::Utf8Path::new(home).into();
+                return home.as_str().into();
             }
         }
-        camino::Utf8Path::new(path).into()
+        path.into()
     }
     async fn prepare_command(&self, command: Script<'_, '_>) -> Result<String> {
         let cmd = match command {
@@ -96,7 +96,7 @@ impl UserImpl for SSHSession {
         #[cfg(feature = "path-home")]
         let path = self.expand_home(path);
         #[cfg(feature = "path-home")]
-        let path = path.as_str();
+        let path = path.as_ref();
         (
             path.to_string(),
             self.sftp.metadata(path).await.map_err(|e| e.into()),
@@ -194,7 +194,7 @@ impl UserImpl for SSHSession {
         #[cfg(feature = "path-home")]
         let path = self.expand_home(path);
         #[cfg(feature = "path-home")]
-        let path = path.as_str();
+        let path = path.as_ref();
 
         let open_flags = opt.into();
         let file = loop {

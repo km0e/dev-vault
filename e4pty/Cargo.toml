@@ -13,7 +13,7 @@ tokio.workspace = true
 tracing.workspace = true
 tempfile = "3.18.0"
 thiserror = "2.0.12"
-resplus = { version = "0.1.1", features = ["full"] }
+resplus = { version = "0.1.2", features = ["full"] }
 
 [target.'cfg(not(windows))'.dependencies]
 rustix-openpty = "0.2.0"
