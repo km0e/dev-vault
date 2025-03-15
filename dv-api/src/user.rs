@@ -15,6 +15,7 @@ pub struct Output {
 #[async_trait::async_trait]
 pub trait UserImpl {
     //FIX:about path encoding, should I use Utf8Path?
+    //TODO:better path handling
     async fn file_attributes(&self, path: &str) -> (String, Result<FileAttributes>);
     async fn glob_file_meta(&self, path: &str) -> Result<Vec<Metadata>>;
     async fn copy(&self, src_path: &str, dst: &str, dst_path: &str) -> Result<()>;

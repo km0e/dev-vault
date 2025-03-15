@@ -1,6 +1,10 @@
 use std::{collections::HashMap, future::IntoFuture, path::Path};
 
-use dv_api::{LocalConfig, Os, Package, SSHConfig, User, UserCast, process::Interactor};
+use dv_api::{
+    LocalConfig, Os, Package, SSHConfig, User, UserCast,
+    fs::{CheckInfo, Metadata, OpenFlags},
+    process::Interactor,
+};
 use rune::{
     Any,
     runtime::{self, Mut, Object, Ref},
@@ -51,7 +55,7 @@ impl Dv {
         let mut obj = Object::new();
         obj.insert(
             rune::alloc::String::try_from("os")?,
-            rune::to_value(user.params.os.clone())?,
+            rune::to_value(user.params.os)?,
         )?;
         obj.insert(
             rune::alloc::String::try_from("hid")?,
@@ -110,7 +114,7 @@ impl Dv {
         && {
             info!("once {} {}", id,key);
             let res: LRes<bool> = rune::from_value(
-                f.call::<_, runtime::Future>(())
+                f.call::<runtime::Future>(())
                     .into_result()?
                     .into_future()
                     .await
@@ -147,6 +151,40 @@ impl Dv {
         this.cache.del(&id, &key).await?;
         action!(this, true, "refresh {} {}", id.as_ref(), key.as_ref());
         Ok(true)
+    }
+    #[rune::function(path = Self::load_src)]
+    async fn load_src(this: Ref<Self>, id: Ref<str>, path: Ref<str>) -> LRes<runtime::Vec> {
+        let id = id.as_ref();
+        if let Some(user) = this.users.get(id) {
+            let path = path.as_ref();
+            let res = user.check_path(path).await?;
+            let mut srcs = runtime::Vec::new();
+            let copy = async |src: &str| -> LRes<runtime::Value> {
+                let mut src = user.open(src, OpenFlags::READ).await?;
+                let dst = tempfile::NamedTempFile::new()?;
+                let (file, path) = dst.keep()?;
+                let mut file = tokio::fs::File::from_std(file);
+                tokio::io::copy(&mut src, &mut file).await?;
+                Ok(rune::to_value(path.to_string_lossy().to_string())?)
+            };
+            match res {
+                CheckInfo::File(f) => {
+                    srcs.push(copy(&f.path).await?)?;
+                }
+                CheckInfo::Dir(di) => {
+                    let mut buf = di.path;
+                    let len = buf.len();
+                    for Metadata { path, .. } in di.files {
+                        buf.truncate(len);
+                        buf.push_str(&path);
+                        srcs.push(copy(&buf).await?)?;
+                    }
+                }
+            }
+            Ok(srcs)
+        } else {
+            Err(rune::support::Error::msg("missing user"))
+        }
     }
 }
 
@@ -247,5 +285,6 @@ pub fn module() -> Result<rune::Module, rune::ContextError> {
     m.function_meta(Dv::once)?;
     m.function_meta(Dv::sync)?;
     m.function_meta(Dv::refresh)?;
+    m.function_meta(Dv::load_src)?;
     Ok(m)
 }

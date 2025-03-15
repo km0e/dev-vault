@@ -25,6 +25,7 @@ async fn main() -> rune::support::Result<()> {
 
     let args = arg::Cli::parse();
     let dbpath = args.dbpath.unwrap_or_else(|| args.directory.join(".cache"));
+    let dv = rune::to_value(dv::Dv::new(dbpath, args.dry_run))?;
 
     let m = dv::module()?;
 
@@ -32,13 +33,50 @@ async fn main() -> rune::support::Result<()> {
     context.install(m)?;
     let runtime = Arc::new(context.runtime()?);
 
-    let mut sources = rune::Sources::new();
+    let build_path = args.directory.join("__build.rn");
+
+    let mut diagnostics = Diagnostics::new();
+    let mut sources = if build_path.exists() {
+        let mut sources = rune::Sources::new();
+        sources.insert(rune::Source::from_path(build_path)?)?;
+
+        let result = rune::prepare(&mut sources)
+            .with_context(&context)
+            .with_diagnostics(&mut diagnostics)
+            .build();
+
+        if !diagnostics.is_empty() {
+            let mut writer = StandardStream::stderr(ColorChoice::Always);
+            diagnostics.emit(&mut writer, &sources)?;
+        }
+
+        let unit = result?;
+
+        let mut vm = Vm::new(runtime.clone(), Arc::new(unit));
+        let res = vm
+            .execute(["main"], (dv.clone(),))?
+            .async_complete()
+            .await
+            .into_result()?;
+        let res: rune::support::Result<Vec<String>> = rune::from_value(res)?;
+        let mut sources = rune::Sources::new();
+        for s in res? {
+            sources.insert(rune::Source::from_path(&s)?)?;
+        }
+        sources
+    } else {
+        rune::Sources::new()
+    };
     sources.insert(rune::Source::from_path(
         args.config
             .unwrap_or_else(|| args.directory.join("config.rn")),
     )?)?;
 
-    let mut diagnostics = Diagnostics::new();
+    let rargs = args
+        .rargs
+        .into_iter()
+        .map(to_value)
+        .collect::<Result<Vec<_>, _>>()?;
 
     let result = rune::prepare(&mut sources)
         .with_context(&context)
@@ -52,20 +90,12 @@ async fn main() -> rune::support::Result<()> {
 
     let unit = result?;
 
-    let mut vm = Vm::new(runtime, Arc::new(unit));
-
-    let rargs = args
-        .rargs
-        .into_iter()
-        .map(to_value)
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut vm = Vm::new(runtime.clone(), Arc::new(unit));
 
     let output = vm
         .execute(
             [args.entry.as_str()],
-            std::iter::once(rune::to_value(dv::Dv::new(dbpath, args.dry_run))?)
-                .chain(rargs)
-                .collect::<Vec<_>>(),
+            std::iter::once(dv).chain(rargs).collect::<Vec<_>>(),
         )?
         .async_complete()
         .await

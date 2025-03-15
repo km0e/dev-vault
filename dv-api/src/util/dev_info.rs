@@ -5,7 +5,7 @@ pub use linux::Linux as LinuxOs;
 use strum::{AsRefStr, Display, EnumIs};
 
 #[cfg_attr(feature = "rune", derive(rune::Any))]
-#[derive(Debug, Clone, Default, Display, EnumIs, AsRefStr, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, Display, EnumIs, AsRefStr, PartialEq)]
 #[strum(serialize_all = "snake_case")]
 pub enum Os {
     #[default]
@@ -17,6 +17,13 @@ pub enum Os {
     Windows,
     #[strum(serialize = "macos")]
     Mac,
+}
+
+impl rune::alloc::clone::TryClone for Os {
+    #[inline]
+    fn try_clone(&self) -> rune::alloc::Result<Self> {
+        Ok(*self)
+    }
 }
 
 impl From<&str> for Os {

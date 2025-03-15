@@ -22,12 +22,13 @@ async-trait.workspace = true
 
 rustix = { version = "1.0.2", features = ["pty", "fs"] }
 
-rune = "0.13.4"
-rune-modules = "0.13.4"
+rune = { version = "0.14.0", git = "https://github.com/rune-rs/rune.git" }
+rune-modules = { version = "0.14.0", git = "https://github.com/rune-rs/rune.git" }
 rusqlite = { version = "0.34.0", features = ["bundled"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 clap = { version = "4.5.32", features = ["derive"] }
 crossterm = "0.28.1"
+tempfile = "3.18.0"
 
 resplus = { version = "0.1.1", features = ["full"] }
 

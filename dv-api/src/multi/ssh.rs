@@ -191,6 +191,11 @@ impl UserImpl for SSHSession {
         Ok(channel.into_pty())
     }
     async fn open(&self, path: &str, opt: OpenFlags) -> crate::Result<BoxedFile> {
+        #[cfg(feature = "path-home")]
+        let path = self.expand_home(path);
+        #[cfg(feature = "path-home")]
+        let path = path.as_str();
+
         let open_flags = opt.into();
         let file = loop {
             match self.sftp.open_with_flags(path, open_flags).await {
