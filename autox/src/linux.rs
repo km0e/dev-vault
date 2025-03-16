@@ -49,7 +49,7 @@ pub struct AutoX {
 }
 
 impl AutoX {
-    pub async fn new(is_system: bool) -> Result<Self, zbus::Error> {
+    pub async fn new(is_system: bool) -> Result<Self, Error> {
         let conn = if is_system {
             info!("start system connection");
             zbus::Connection::system().await
@@ -64,10 +64,10 @@ impl AutoX {
             manager,
         })
     }
-    pub async fn setup(&self, _name: &str, _args: &str) -> Result<(), zbus::Error> {
+    pub async fn setup(&self, _name: &str, _args: &str) -> Result<(), Error> {
         unimplemented!()
     }
-    pub async fn enable(&self, name: &str) -> Result<(), zbus::Error> {
+    pub async fn enable(&self, name: &str) -> Result<(), Error> {
         trace!(
             "[{}] setup {}",
             if self.is_system { "system" } else { "user" },
@@ -97,7 +97,10 @@ impl AutoX {
         }
         Ok(())
     }
-    pub async fn reload(&self, name: &str) -> Result<(), zbus::Error> {
+    pub async fn destroy(&self, _name: &str) -> Result<(), Error> {
+        unimplemented!()
+    }
+    pub async fn reload(&self, name: &str) -> Result<(), Error> {
         let unit_path = self.manager.get_unit(name).await?;
         let unit = UnitProxy::builder(&self.conn)
             .path(unit_path)?
@@ -113,3 +116,5 @@ impl AutoX {
         Ok(())
     }
 }
+
+pub type Error = zbus::Error;
