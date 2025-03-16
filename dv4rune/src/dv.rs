@@ -5,6 +5,7 @@ use dv_api::{
     fs::{CheckInfo, Metadata, OpenFlags},
     process::Interactor,
 };
+use resplus::attach;
 use rune::{
     Any,
     runtime::{self, Mut, Object, Ref},
@@ -157,7 +158,7 @@ impl Dv {
         let id = id.as_ref();
         if let Some(user) = this.users.get(id) {
             let path = path.as_ref();
-            let res = user.check_path(path).await?;
+            let res = attach!(user.check_path(path), ..).await?;
             let mut srcs = runtime::Vec::new();
             let copy = async |src: &str| -> LRes<runtime::Value> {
                 let mut src = user.open(src, OpenFlags::READ).await?;

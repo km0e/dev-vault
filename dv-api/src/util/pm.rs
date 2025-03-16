@@ -46,22 +46,22 @@ pub struct Package {
 impl Display for Package {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(apk) = &self.apk {
-            write!(f, "apk:{}", apk)?;
+            write!(f, "apk:{} ", apk)?;
         }
         if let Some(apt) = &self.apt {
-            write!(f, "apt:{}", apt)?;
+            write!(f, "apt:{} ", apt)?;
         }
         if let Some(pacman) = &self.pacman {
-            write!(f, "pacman:{}", pacman)?;
+            write!(f, "pacman:{} ", pacman)?;
         }
         if let Some(yay) = &self.yay {
-            write!(f, "yay:{}", yay)?;
+            write!(f, "yay:{} ", yay)?;
         }
         if let Some(paru) = &self.paru {
-            write!(f, "paru:{}", paru)?;
+            write!(f, "paru:{} ", paru)?;
         }
         if let Some(winget) = &self.winget {
-            write!(f, "winget:{}", winget)?;
+            write!(f, "winget:{} ", winget)?;
         }
         Ok(())
     }

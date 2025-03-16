@@ -4,7 +4,9 @@ mod dv;
 mod interactor;
 mod multi;
 mod utils;
-
+mod error {
+    pub use dv_api::error::*;
+}
 use clap::Parser;
 use rune::{
     Diagnostics, Vm,
