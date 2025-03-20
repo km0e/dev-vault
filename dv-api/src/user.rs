@@ -11,13 +11,15 @@ pub struct Output {
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
 }
+pub use camino::Utf8Path;
+pub use camino::Utf8PathBuf;
 
 #[async_trait::async_trait]
 pub trait UserImpl {
     //FIX:about path encoding, should I use Utf8Path?
     //TODO:better path handling
-    async fn file_attributes(&self, path: &str) -> (String, Result<FileAttributes>);
-    async fn glob_file_meta(&self, path: &str) -> Result<Vec<Metadata>>;
+    async fn file_attributes(&self, path: &str) -> (Utf8PathBuf, Result<FileAttributes>);
+    async fn glob_file_meta(&self, path: &Utf8Path) -> Result<Vec<Metadata>>;
     async fn copy(&self, src_path: &str, dst: &str, dst_path: &str) -> Result<()>;
     async fn open(&self, path: &str, opt: OpenFlags) -> Result<BoxedFile>;
     async fn auto(&self, name: &str, action: &str, args: Option<&str>) -> Result<()>;

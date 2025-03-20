@@ -52,8 +52,8 @@ mod auto;
 pub use auto::auto;
 mod exec;
 pub use exec::exec;
-mod sync;
-pub use sync::sync;
+// mod sync;
+// pub use sync::sync;
 mod util;
 
 mod dev {

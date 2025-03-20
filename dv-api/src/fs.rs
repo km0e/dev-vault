@@ -4,13 +4,13 @@ pub use russh_sftp::protocol::FileAttributes;
 
 #[derive(Debug, Clone)]
 pub struct Metadata {
-    pub path: String,
+    pub path: crate::user::Utf8PathBuf,
     pub ts: i64,
 }
 
 #[derive(Debug, Clone)]
 pub struct DirInfo {
-    pub path: String,
+    pub path: camino::Utf8PathBuf,
     pub files: Vec<Metadata>,
 }
 

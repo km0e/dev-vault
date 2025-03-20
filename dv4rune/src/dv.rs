@@ -4,6 +4,7 @@ use dv_api::{
     LocalConfig, Os, Package, SSHConfig, User, UserCast,
     fs::{CheckInfo, Metadata, OpenFlags},
     process::Interactor,
+    user::Utf8Path,
 };
 use resplus::attach;
 use rune::{
@@ -123,30 +124,30 @@ impl Dv {
             )?;
             let res= res?;
             if !this.dry_run {
-                this.cache.set(id, key, 0).await?;
+                this.cache.set(id, key, 0,0).await?;
             }
             res
         };
         action!(this, res, "once {} {}", id, key);
         Ok(res)
     }
-    #[rune::function(path = Self::sync)]
-    async fn sync(
-        this: Ref<Self>,
-        src_uid: Ref<str>,
-        src_path: Ref<str>,
-        dst_uid: Ref<str>,
-        dst_path: Ref<str>,
-    ) -> LRes<bool> {
-        crate::multi::sync(
-            &this.context(),
-            src_uid,
-            src_path,
-            dst_uid,
-            dst_path.as_ref(),
-        )
-        .await
-    }
+    // #[rune::function(path = Self::sync)]
+    // async fn sync(
+    //     this: Ref<Self>,
+    //     src_uid: Ref<str>,
+    //     src_path: Ref<str>,
+    //     dst_uid: Ref<str>,
+    //     dst_path: Ref<str>,
+    // ) -> LRes<bool> {
+    //     crate::multi::sync(
+    //         &this.context(),
+    //         src_uid,
+    //         src_path,
+    //         dst_uid,
+    //         dst_path.as_ref(),
+    //     )
+    //     .await
+    // }
     #[rune::function(path = Self::refresh)]
     async fn refresh(this: Ref<Self>, id: Ref<str>, key: Ref<str>) -> LRes<bool> {
         this.cache.del(&id, &key).await?;
@@ -160,7 +161,7 @@ impl Dv {
             let path = path.as_ref();
             let res = attach!(user.check_path(path), ..).await?;
             let mut srcs = runtime::Vec::new();
-            let copy = async |src: &str| -> LRes<runtime::Value> {
+            let copy = async |src: &Utf8Path| -> LRes<runtime::Value> {
                 let mut src = user.open(src, OpenFlags::READ).await?;
                 let dst = tempfile::NamedTempFile::new()?;
                 let (file, path) = dst.keep()?;
@@ -174,11 +175,10 @@ impl Dv {
                 }
                 CheckInfo::Dir(di) => {
                     let mut buf = di.path;
-                    let len = buf.len();
                     for Metadata { path, .. } in di.files {
-                        buf.truncate(len);
-                        buf.push_str(&path);
+                        buf.push(&path);
                         srcs.push(copy(&buf).await?)?;
+                        buf.pop();
                     }
                 }
             }
@@ -284,8 +284,27 @@ pub fn module() -> Result<rune::Module, rune::ContextError> {
     m.function_meta(Dv::auto)?;
     m.function_meta(Dv::exec)?;
     m.function_meta(Dv::once)?;
-    m.function_meta(Dv::sync)?;
+    // m.function_meta(Dv::sync)?;
     m.function_meta(Dv::refresh)?;
     m.function_meta(Dv::load_src)?;
     Ok(m)
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use dv_api::User;
+    use std::collections::HashMap;
+
+    pub struct TestDv {
+        pub dry_run: bool,
+        pub users: HashMap<String, User>,
+        pub cache: SqliteCache,
+        pub interactor: TermInteractor,
+    }
+    impl TestDv {
+        pub fn context(&self) -> Context<'_> {
+            Context::new(self.dry_run, &self.cache, &self.interactor, &self.users)
+        }
+    }
 }

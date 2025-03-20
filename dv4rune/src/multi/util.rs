@@ -1,14 +1,14 @@
-use dv_api::{User, fs::OpenFlags};
+use dv_api::{User, fs::OpenFlags, user::Utf8Path};
 use tracing::{info, warn};
 
 use super::dev::LRes;
 pub async fn try_copy(
     src: &User,
     src_uid: &str,
-    src_path: &str,
+    src_path: &Utf8Path,
     dst: &User,
     dst_uid: &str,
-    dst_path: &str,
+    dst_path: &Utf8Path,
 ) -> LRes<()> {
     if src_uid == dst_uid {
         if src_path == dst_path {
@@ -35,7 +35,10 @@ pub async fn try_copy(
     } else {
         let mut src = src.open(src_path, OpenFlags::READ).await?;
         let mut dst = dst
-            .open(dst_path, OpenFlags::WRITE | OpenFlags::CREATE)
+            .open(
+                dst_path,
+                OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::TRUNCATE,
+            )
             .await?;
         tokio::io::copy(&mut src, &mut dst).await?;
     }

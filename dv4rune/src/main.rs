@@ -27,8 +27,6 @@ async fn main() -> rune::support::Result<()> {
 
     let args = arg::Cli::parse();
     let dbpath = args.dbpath.unwrap_or_else(|| args.directory.join(".cache"));
-    let dv = rune::to_value(dv::Dv::new(dbpath, args.dry_run))?;
-
     let m = dv::module()?;
 
     let mut context = rune_modules::default_context()?;
@@ -38,7 +36,7 @@ async fn main() -> rune::support::Result<()> {
     let build_path = args.directory.join("__build.rn");
 
     let mut diagnostics = Diagnostics::new();
-    let mut sources = if build_path.exists() {
+    let mut sources = if !args.direct_run && build_path.exists() {
         let mut sources = rune::Sources::new();
         sources.insert(rune::Source::from_path(build_path)?)?;
 
@@ -56,7 +54,10 @@ async fn main() -> rune::support::Result<()> {
 
         let mut vm = Vm::new(runtime.clone(), Arc::new(unit));
         let res = vm
-            .execute(["main"], (dv.clone(),))?
+            .execute(
+                ["main"],
+                (rune::to_value(dv::Dv::new(&dbpath, args.dry_run))?,),
+            )?
             .async_complete()
             .await
             .into_result()?;
@@ -93,6 +94,7 @@ async fn main() -> rune::support::Result<()> {
     let unit = result?;
 
     let mut vm = Vm::new(runtime.clone(), Arc::new(unit));
+    let dv = rune::to_value(dv::Dv::new(dbpath, args.dry_run))?;
 
     let output = vm
         .execute(

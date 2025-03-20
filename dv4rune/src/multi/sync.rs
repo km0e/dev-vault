@@ -1,5 +1,8 @@
 use super::dev::*;
-use dv_api::fs::{CheckInfo, Metadata};
+use dv_api::{
+    fs::{CheckInfo, Metadata},
+    user::Utf8PathBuf,
+};
 use tracing::info;
 
 pub async fn sync(
@@ -25,18 +28,18 @@ pub async fn sync(
 
     #[derive(Default)]
     struct CopyItem {
-        src_path: String,
-        dst_path: String,
+        src_path: Utf8PathBuf,
+        dst_path: Utf8PathBuf,
         skip: bool,
         reverse: bool,
         ts: Option<i64>,
     }
 
     impl CopyItem {
-        fn new(src_path: String, dst_path: String) -> Self {
+        fn new(src_path: impl Into<Utf8PathBuf>, dst_path: impl Into<Utf8PathBuf>) -> Self {
             Self {
-                src_path,
-                dst_path,
+                src_path: src_path.into(),
+                dst_path: dst_path.into(),
                 ..Default::default()
             }
         }
@@ -54,7 +57,7 @@ pub async fn sync(
         }
     }
 
-    let copy_file = async |src_path: String, dst_path: &str| -> LRes<CopyItem> {
+    let copy_file = async |src_path: Utf8PathBuf, dst_path: &str| -> LRes<CopyItem> {
         let (dst_path, res) = dst.check_file(dst_path).await;
         let res = match res {
             Err(e) if e.is_not_found() => CopyItem::new(src_path, dst_path),
@@ -65,7 +68,7 @@ pub async fn sync(
                 let ts = ts as i64;
                 let cache_ts = ctx
                     .cache
-                    .get(dst_uid, &dst_path)
+                    .get(dst_uid, dst_path.as_str())
                     .log(ctx.interactor)
                     .await?;
                 let mut item = CopyItem::new(src_path, dst_path).reverse();

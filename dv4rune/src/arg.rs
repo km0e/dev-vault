@@ -18,6 +18,8 @@ pub struct Cli {
     pub dbpath: Option<PathBuf>,
     #[arg(short = 'n', long, default_value = "false")]
     pub dry_run: bool,
+    #[arg(long, default_value = "false")]
+    pub direct_run: bool,
     #[arg(default_value = "main")]
     pub entry: String,
     #[arg(trailing_var_arg = true)]

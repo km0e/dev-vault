@@ -159,21 +159,19 @@ impl This {
 
 #[async_trait]
 impl UserImpl for This {
-    async fn file_attributes(&self, path: &str) -> (String, Result<FileAttributes>) {
+    async fn file_attributes(&self, path: &str) -> (camino::Utf8PathBuf, Result<FileAttributes>) {
         #[cfg(feature = "path-home")]
         let path2 = self.expand_home(path);
         #[cfg(not(feature = "path-home"))]
         let path2 = Path::new(path);
         (
-            path2.to_string_lossy().to_string(),
+            path2.to_string_lossy().to_string().into(),
             std::fs::metadata(&path2)
                 .map(|meta| (&meta).into())
                 .map_err(|e| e.into()),
         )
     }
-    async fn glob_file_meta(&self, path: &str) -> Result<Vec<Metadata>> {
-        let path2 = Path::new(path);
-
+    async fn glob_file_meta(&self, path2: &camino::Utf8Path) -> Result<Vec<Metadata>> {
         let metadata = path2.metadata()?;
         if metadata.is_dir() {
             let mut result = Vec::new();
@@ -201,13 +199,13 @@ impl UserImpl for This {
                     continue;
                 };
                 result.push(Metadata {
-                    path: rel_path.to_string_lossy().to_string(),
+                    path: rel_path.to_string_lossy().to_string().into(),
                     ts: modified,
                 });
             }
             Ok(result)
         } else {
-            whatever!("{} not a directory", path)
+            whatever!("{} not a directory", path2)
         }
     }
     async fn copy(&self, src_path: &str, _: &str, dst_path: &str) -> Result<()> {

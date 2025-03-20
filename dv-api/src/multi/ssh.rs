@@ -92,18 +92,18 @@ impl SSHSession {
 
 #[async_trait]
 impl UserImpl for SSHSession {
-    async fn file_attributes(&self, path: &str) -> (String, Result<FileAttributes>) {
+    async fn file_attributes(&self, path: &str) -> (camino::Utf8PathBuf, Result<FileAttributes>) {
         #[cfg(feature = "path-home")]
         let path = self.expand_home(path);
         #[cfg(feature = "path-home")]
         let path = path.as_ref();
         (
-            path.to_string(),
+            path.to_string().into(),
             self.sftp.metadata(path).await.map_err(|e| e.into()),
         )
     }
-    async fn glob_file_meta(&self, path: &str) -> crate::Result<Vec<Metadata>> {
-        let metadata = self.sftp.metadata(path).await?;
+    async fn glob_file_meta(&self, path: &camino::Utf8Path) -> crate::Result<Vec<Metadata>> {
+        let metadata = self.sftp.metadata(path.to_string()).await?;
         if metadata.is_dir() {
             let mut stack = vec![path.to_string()];
             let prefix = format!("{path}/");
@@ -118,7 +118,7 @@ impl UserImpl for SSHSession {
                     if entry.file_type().is_file() {
                         if let Some(mtime) = entry.metadata().mtime {
                             infos.push(Metadata {
-                                path: sub_path.strip_prefix(&prefix).unwrap().to_string(),
+                                path: sub_path.strip_prefix(&prefix).unwrap().to_string().into(),
                                 ts: mtime.into(),
                             });
                         } else {

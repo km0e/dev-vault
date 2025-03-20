@@ -1,3 +1,4 @@
+use crate::user::Utf8Path;
 use resplus::attach;
 use std::borrow::Cow;
 
@@ -65,7 +66,7 @@ impl User {
         };
         path
     }
-    pub async fn check_file(&self, path: &str) -> (String, Result<FileAttributes>) {
+    pub async fn check_file(&self, path: &str) -> (camino::Utf8PathBuf, Result<FileAttributes>) {
         let path = self.normalize(path);
         self.inner.file_attributes(path.as_str()).await
     }
@@ -76,19 +77,13 @@ impl User {
         let fa = fa?;
         let info = if fa.is_dir() {
             let files = self.inner.glob_file_meta(&path).await?;
-            CheckInfo::Dir(DirInfo {
-                path: path.to_string(),
-                files,
-            })
+            CheckInfo::Dir(DirInfo { path, files })
         } else {
             let ts = match fa.mtime {
                 Some(time) => time as i64,
                 None => whatever!("{path} mtime"),
             };
-            CheckInfo::File(Metadata {
-                path: path.to_string(),
-                ts,
-            })
+            CheckInfo::File(Metadata { path, ts })
         };
         Ok(info)
     }
@@ -105,7 +100,7 @@ impl User {
             files: metadata,
         })
     }
-    pub async fn copy(&self, src_path: &str, dst: &str, dst_path: &str) -> Result<()> {
+    pub async fn copy(&self, src_path: &Utf8Path, dst: &str, dst_path: &Utf8Path) -> Result<()> {
         let src_path = self.normalize(src_path);
         let dst_path = self.normalize(dst_path);
         attach!(
@@ -128,7 +123,7 @@ impl User {
     pub async fn exec(&self, s: Script<'_, '_>) -> Result<Output> {
         self.inner.exec(s).await
     }
-    pub async fn open(&self, path: &str, opt: OpenFlags) -> crate::Result<BoxedFile> {
+    pub async fn open(&self, path: &Utf8Path, opt: OpenFlags) -> crate::Result<BoxedFile> {
         let path = self.normalize(path);
         attach!(self.inner.open(path.as_str(), opt), 0).await
     }
