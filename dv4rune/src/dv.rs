@@ -68,19 +68,14 @@ impl Dv {
     #[rune::function(path = Self::copy)]
     async fn copy(
         this: Ref<Self>,
-        src_uid: Ref<str>,
-        src_path: Ref<str>,
-        dst_uid: Ref<str>,
-        dst_path: Ref<str>,
+        src: (Ref<str>, Ref<str>),
+        dst: (Ref<str>, Ref<str>),
+        confirm: Option<Ref<str>>,
     ) -> LRes<bool> {
-        crate::multi::copy(
-            &this.context(),
-            src_uid,
-            src_path,
-            dst_uid,
-            dst_path.as_ref(),
-        )
-        .await
+        crate::multi::CopyContext::new(this.context(), &src.0, &dst.0, confirm.as_deref())
+            .await?
+            .copy(src.1, dst.1)
+            .await
     }
     #[rune::function(path = Self::exec)]
     async fn exec(
@@ -131,23 +126,6 @@ impl Dv {
         action!(this, res, "once {} {}", id, key);
         Ok(res)
     }
-    // #[rune::function(path = Self::sync)]
-    // async fn sync(
-    //     this: Ref<Self>,
-    //     src_uid: Ref<str>,
-    //     src_path: Ref<str>,
-    //     dst_uid: Ref<str>,
-    //     dst_path: Ref<str>,
-    // ) -> LRes<bool> {
-    //     crate::multi::sync(
-    //         &this.context(),
-    //         src_uid,
-    //         src_path,
-    //         dst_uid,
-    //         dst_path.as_ref(),
-    //     )
-    //     .await
-    // }
     #[rune::function(path = Self::refresh)]
     async fn refresh(this: Ref<Self>, id: Ref<str>, key: Ref<str>) -> LRes<bool> {
         this.cache.del(&id, &key).await?;
@@ -209,7 +187,7 @@ impl Dv {
         d.users.push(id.to_string());
         let u = &this.users[id];
         this.interactor
-            .log(&format!(
+            .log(format!(
                 "local user: {:<10}, hid: {:<10}, os: {:<8}",
                 id,
                 u.hid,
@@ -250,7 +228,7 @@ impl Dv {
         }
         let u = &this.users[id];
         this.interactor
-            .log(&format!(
+            .log(format!(
                 "ssh   user: {:<10}, hid: {:<10}, os: {:<8}",
                 id,
                 u.hid,
@@ -284,7 +262,6 @@ pub fn module() -> Result<rune::Module, rune::ContextError> {
     m.function_meta(Dv::auto)?;
     m.function_meta(Dv::exec)?;
     m.function_meta(Dv::once)?;
-    // m.function_meta(Dv::sync)?;
     m.function_meta(Dv::refresh)?;
     m.function_meta(Dv::load_src)?;
     Ok(m)

@@ -135,9 +135,7 @@ pub(crate) struct This {
 
 impl This {
     pub async fn new(is_system: bool) -> Result<Self> {
-        let autox = AutoX::new(is_system)
-            .await
-            .map_err(|e| Error::Unknown(e.to_string()))?;
+        let autox = AutoX::new(is_system).await.map_err(Error::unknown)?;
         Ok(Self {
             #[cfg(feature = "path-home")]
             home: home::home_dir(),
@@ -159,9 +157,12 @@ impl This {
 
 #[async_trait]
 impl UserImpl for This {
-    async fn file_attributes(&self, path: &str) -> (camino::Utf8PathBuf, Result<FileAttributes>) {
+    async fn file_attributes(
+        &self,
+        path: &Utf8Path,
+    ) -> (camino::Utf8PathBuf, Result<FileAttributes>) {
         #[cfg(feature = "path-home")]
-        let path2 = self.expand_home(path);
+        let path2 = self.expand_home(path.as_str());
         #[cfg(not(feature = "path-home"))]
         let path2 = Path::new(path);
         (
@@ -232,21 +233,9 @@ impl UserImpl for This {
     }
     async fn auto(&self, name: &str, action: &str, args: Option<&str>) -> Result<()> {
         match (action, args) {
-            ("setup", Some(args)) => self
-                .autox
-                .setup(name, args)
-                .await
-                .map_err(|e| Error::Unknown(e.to_string()))?,
-            ("reload", None) => self
-                .autox
-                .reload(name)
-                .await
-                .map_err(|e| Error::Unknown(e.to_string()))?,
-            ("destroy", None) => self
-                .autox
-                .destroy(name)
-                .await
-                .map_err(|e| Error::Unknown(e.to_string()))?,
+            ("setup", Some(args)) => self.autox.setup(name, args).await.map_err(Error::unknown)?,
+            ("reload", None) => self.autox.reload(name).await.map_err(Error::unknown)?,
+            ("destroy", None) => self.autox.destroy(name).await.map_err(Error::unknown)?,
             _ => unimplemented!(),
         };
         Ok(())

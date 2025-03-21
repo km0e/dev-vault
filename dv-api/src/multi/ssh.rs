@@ -92,9 +92,12 @@ impl SSHSession {
 
 #[async_trait]
 impl UserImpl for SSHSession {
-    async fn file_attributes(&self, path: &str) -> (camino::Utf8PathBuf, Result<FileAttributes>) {
+    async fn file_attributes(
+        &self,
+        path: &Utf8Path,
+    ) -> (camino::Utf8PathBuf, Result<FileAttributes>) {
         #[cfg(feature = "path-home")]
-        let path = self.expand_home(path);
+        let path = self.expand_home(path.as_str());
         #[cfg(feature = "path-home")]
         let path = path.as_ref();
         (

@@ -2,6 +2,7 @@ use crate::{cache::SqliteCache, interactor::TermInteractor};
 use dv_api::{User, process::Interactor};
 use std::collections::HashMap;
 
+#[derive(Clone)]
 pub struct Context<'a> {
     pub dry_run: bool,
     pub cache: &'a SqliteCache,
@@ -10,8 +11,8 @@ pub struct Context<'a> {
 }
 
 macro_rules! action {
-    ($ctx:ident, $suc:expr, $fmt:literal, $($arg:tt)*) => {
-        $ctx.interactor.log(&format!(concat!("[{}] {} ",$fmt), if $ctx.dry_run { "n" } else { "a" }, if $suc { "exec" } else { "skip" }, $($arg)*)).await;
+    ($ctx:ident, $suc:expr, $fmt:expr, $($arg:tt)*) => {
+        $ctx.interactor.log(format!(concat!("[{}] {} ",$fmt), if $ctx.dry_run { "n" } else { "a" }, if $suc { "exec" } else { "skip" }, $($arg)*)).await;
     };
 }
 
@@ -37,7 +38,7 @@ impl<'s> Context<'s> {
             Some(user) => Ok(user),
             None => {
                 let m = format!("user {} not found", uid);
-                self.interactor.log(&m).await;
+                self.interactor.log(m.clone()).await;
                 Err(rune::support::Error::msg(m))
             }
         }
@@ -45,15 +46,13 @@ impl<'s> Context<'s> {
 }
 
 mod copy;
-pub use copy::copy;
+pub use copy::CopyContext;
 mod app;
 pub use app::app;
 mod auto;
 pub use auto::auto;
 mod exec;
 pub use exec::exec;
-// mod sync;
-// pub use sync::sync;
 mod util;
 
 mod dev {

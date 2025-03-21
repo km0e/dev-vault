@@ -7,8 +7,12 @@ use crate::user::Output;
 #[async_trait]
 pub trait Interactor {
     async fn window_size(&self) -> WindowSize;
-    async fn log(&self, msg: &str);
+    async fn log(&self, msg: String);
     async fn ask(&self, pty: BoxedPty) -> crate::Result<i32>;
+    /// # Parameters
+    /// - `msg`: The message to display to the user.
+    /// - `opts`: The options to display to the user. For example, `["y/exec", "n/do nothing"]`.
+    async fn confirm(&self, msg: String, opts: &[&str]) -> crate::Result<usize>;
 }
 
 pub type DynInteractor = dyn Interactor + Sync;

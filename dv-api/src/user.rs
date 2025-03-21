@@ -18,7 +18,7 @@ pub use camino::Utf8PathBuf;
 pub trait UserImpl {
     //FIX:about path encoding, should I use Utf8Path?
     //TODO:better path handling
-    async fn file_attributes(&self, path: &str) -> (Utf8PathBuf, Result<FileAttributes>);
+    async fn file_attributes(&self, path: &Utf8Path) -> (Utf8PathBuf, Result<FileAttributes>);
     async fn glob_file_meta(&self, path: &Utf8Path) -> Result<Vec<Metadata>>;
     async fn copy(&self, src_path: &str, dst: &str, dst_path: &str) -> Result<()>;
     async fn open(&self, path: &str, opt: OpenFlags) -> Result<BoxedFile>;

@@ -1,165 +1,240 @@
+use std::{borrow::Cow, ops::Deref};
+
 use super::dev::*;
 use dv_api::{
+    User,
     fs::{CheckInfo, DirInfo, FileAttributes, Metadata},
     user::{Utf8Path, Utf8PathBuf},
     whatever,
 };
-use tracing::{debug, info, trace};
+use tracing::{debug, trace};
 
-async fn check_copy_file(
-    ctx: &Context<'_>,
-    src_uid: &str,
-    src_path: impl AsRef<Utf8Path>,
-    dst_uid: &str,
-    dst_path: impl AsRef<Utf8Path>,
-    src_ts: i64,
-    dst_ts: Option<i64>,
-) -> LRes<bool> {
-    let src_path = src_path.as_ref();
-    let dst_path = dst_path.as_ref();
-    let src = ctx.get_user(src_uid).await?;
-    let dst = ctx.get_user(dst_uid).await?;
-    let cache = ctx
-        .cache
-        .get(dst_uid, dst_path.as_str())
-        .log(ctx.interactor)
-        .await?;
-    let res = if cache.is_some_and(|(dst_ver, _)| {
-        if dst_ver != src_ts {
-            debug!("{} != {}", dst_ver, src_ts);
+pub struct CopyContext<'a> {
+    ctx: Context<'a>,
+    src: &'a User,
+    src_uid: &'a str,
+    dst: &'a User,
+    dst_uid: &'a str,
+    opt: Option<&'a str>,
+}
+
+impl<'a> Deref for CopyContext<'a> {
+    type Target = Context<'a>;
+    fn deref(&self) -> &Self::Target {
+        &self.ctx
+    }
+}
+impl<'a> CopyContext<'a> {
+    pub async fn new(
+        ctx: Context<'a>,
+        src_uid: &'a str,
+        dst_uid: &'a str,
+        mut opt: Option<&'a str>,
+    ) -> LRes<Self> {
+        let src = ctx.get_user(src_uid).await?;
+        let dst = ctx.get_user(dst_uid).await?;
+        if let Some(_opt) = opt {
+            if !matches!(_opt, "o" | "n" | "u") {
+                ctx.interactor
+                    .log(format!("invalid option: {}", _opt))
+                    .await;
+                opt = None;
+            }
         }
-        dst_ver == src_ts
-    }) {
-        false
-    } else if ctx.dry_run {
-        true
-    } else {
-        try_copy(src, src_uid, src_path, dst, dst_uid, dst_path)
-            .log(ctx.interactor)
+        Ok(Self {
+            ctx,
+            src,
+            src_uid,
+            dst,
+            dst_uid,
+            opt,
+        })
+    }
+
+    async fn check_copy_file(
+        &self,
+        src_path: &Utf8Path,
+        dst_path: &Utf8Path,
+        src_ts: i64,
+        dst_ts: Option<i64>,
+    ) -> LRes<bool> {
+        let cache = self
+            .ctx
+            .cache
+            .get(self.dst_uid, dst_path.as_str())
+            .log(self.interactor)
             .await?;
-        let dst_ts = match dst_ts {
-            Some(ts) => ts,
-            _ => dst
-                .check_file(dst_path.as_str())
-                .await
-                .1?
-                .mtime
-                .ok_or_else(|| dv_api::Error::Unknown(format!("{} mtime", dst_path)))?
-                .into(),
+        let (do_, rev) = match (cache, dst_ts) {
+            (Some((dst_ver, old_dst_ts)), Some(dst_ts))
+                if dst_ver == src_ts || old_dst_ts == dst_ts =>
+            {
+                debug!(
+                    "src {{path:{} old_ts:{} ts:{}}} dst {{path:{} old_ts:{} ts:{}}}",
+                    src_path, dst_ver, src_ts, dst_path, old_dst_ts, dst_ts
+                );
+                if old_dst_ts != dst_ts {
+                    match self.opt {
+                        Some("n") => (false, false),
+                        Some("u") => (true, true),
+                        _ => {
+                            let sel = self
+                                .interactor
+                                .confirm(
+                                    format!("{} is newer, do what?", dst_path),
+                                    &["n/skip", "u/update"],
+                                )
+                                .log(self.interactor)
+                                .await?;
+                            (sel == 1, true)
+                        }
+                    }
+                } else {
+                    (dst_ver != src_ts, false)
+                }
+            }
+            (_, None) => (true, false),
+            _ => match self.opt {
+                Some("o") => (true, false),
+                Some("n") => (false, false),
+                Some("u") => (true, true),
+                _ => {
+                    let sel = self
+                        .interactor
+                        .confirm(
+                            format!("{} is newer, do what?", dst_path),
+                            &["y/overwrite", "n/skip", "u/update"],
+                        )
+                        .log(self.interactor)
+                        .await?;
+                    (sel != 1, sel == 2)
+                }
+            },
         };
-        ctx.cache
-            .set(dst_uid, dst_path.as_str(), src_ts, dst_ts)
-            .log(ctx.interactor)
-            .await?;
-        true
-    };
-    action!(
-        ctx,
-        res,
-        "copy {}:{} -> {}:{}",
-        src_uid,
-        src_path,
-        dst_uid,
-        dst_path
-    );
-    Ok(res)
-}
-
-async fn check_copy_dir(
-    ctx: &Context<'_>,
-    src_uid: &str,
-    src_path: impl Into<Utf8PathBuf>,
-    dst_uid: &str,
-    dst_path: impl Into<Utf8PathBuf>,
-    meta: Vec<Metadata>,
-) -> LRes<bool> {
-    let src_path: Utf8PathBuf = src_path.into();
-    let dst_path: Utf8PathBuf = dst_path.into();
-    info!(
-        "check_copy_dir {}:{} -> {}:{}",
-        src_uid, src_path, dst_uid, dst_path
-    );
-    let mut success = false;
-    let mut src_file = src_path.clone();
-    let mut dst_file = dst_path.clone();
-    for Metadata { path, ts } in meta {
-        src_file.push(&path);
-        dst_file.push(&path);
-        let res = check_copy_file(ctx, src_uid, &src_file, dst_uid, &dst_file, ts, None).await?;
-        src_file.clone_from(&src_path);
-        dst_file.clone_from(&dst_path);
-        success |= res;
-    }
-    Ok(success)
-}
-
-pub async fn copy(
-    ctx: &Context<'_>,
-    src_uid: impl AsRef<str>,
-    src_path: impl AsRef<str>,
-    dst_uid: impl AsRef<str>,
-    dst_path: impl AsRef<str>,
-) -> LRes<bool> {
-    let src_uid = src_uid.as_ref();
-    let dst_uid = dst_uid.as_ref();
-    let src_path = src_path.as_ref();
-    let dst_path: &str = dst_path.as_ref();
-    if src_path.is_empty() {
-        ctx.interactor.log("src_path is empty").await;
-    }
-    if dst_path.is_empty() {
-        ctx.interactor.log("dst_path is empty").await;
-    }
-    trace!("copy {}:{} -> {}:{}", src_uid, src_path, dst_uid, dst_path);
-    let src = ctx.get_user(src_uid).await?;
-    let dst = ctx.get_user(dst_uid).await?;
-    let confirm = |fa: dv_api::Result<FileAttributes>, is_dir: bool| -> LRes<()> {
-        match fa {
-            Ok(fa) if fa.is_dir() != is_dir => {
-                whatever!(
-                    "{} is {}a directory",
+        if do_ && !self.dry_run {
+            let (src_ts, dst_ts) = if !rev {
+                try_copy(
+                    self.src,
+                    self.src_uid,
+                    src_path,
+                    self.dst,
+                    self.dst_uid,
                     dst_path,
-                    is_dir.then_some("not ").unwrap_or_default()
                 )
-            }
-            Err(e) if !e.is_not_found() => Err(e)?,
-            _ => Ok(()),
+                .await?;
+                (Some(src_ts), self.dst.get_mtime(dst_path).await?)
+            } else {
+                try_copy(
+                    self.dst,
+                    self.dst_uid,
+                    dst_path,
+                    self.src,
+                    self.src_uid,
+                    src_path,
+                )
+                .await?;
+                (self.src.get_mtime(src_path).await?, dst_ts)
+            };
+            let Some(src_ts) = src_ts else {
+                whatever!("get {} mtime failed", src_path)
+            };
+            let Some(dst_ts) = dst_ts else {
+                whatever!("get {} mtime failed", dst_path)
+            };
+            self.cache
+                .set(self.dst_uid, dst_path.as_str(), src_ts, dst_ts)
+                .log(self.interactor)
+                .await?;
         }
-    };
-    if src_path.ends_with('/') {
-        let DirInfo { path, files } = src.check_dir(src_path).log(ctx.interactor).await?;
-        let (dst_path, fa) = dst.check_file(dst_path).await;
-        confirm(fa, true)?;
-        check_copy_dir(ctx, src_uid, path, dst_uid, dst_path, files).await
-    } else {
-        let info = src.check_path(src_path).log(ctx.interactor).await?;
-        let (mut dst_path2, fa) = dst.check_file(dst_path).await;
+        action!(
+            self,
+            do_,
+            "{} {}:{} {} {}:{}",
+            if do_ && rev { "update" } else { "copy" },
+            self.src_uid,
+            src_path,
+            if do_ && rev { "<-" } else { "->" },
+            self.dst_uid,
+            dst_path
+        );
+        Ok(do_)
+    }
 
-        if dst_path.ends_with('/') {
-            dst_path2.push(
-                src_path
-                    .rsplit_once('/')
-                    .map(|(_, name)| name)
-                    .unwrap_or(src_path),
-            );
-        };
-        match info {
-            CheckInfo::Dir(dir) => {
-                confirm(fa, true)?;
-                check_copy_dir(ctx, src_uid, dir.path, dst_uid, dst_path2, dir.files).await
+    async fn check_copy_dir(
+        &self,
+        src_path: Utf8PathBuf,
+        dst_path: Utf8PathBuf,
+        meta: Vec<Metadata>,
+    ) -> LRes<bool> {
+        let mut success = false;
+        let mut src_file = src_path.clone();
+        let mut dst_file = dst_path.clone();
+        for Metadata { path, ts } in meta {
+            src_file.push(&path);
+            dst_file.push(&path);
+            let dst_ts = self.dst.get_mtime(&dst_file).await?;
+
+            let res = self
+                .check_copy_file(&src_file, &dst_file, ts, dst_ts)
+                .await?;
+            src_file.clone_from(&src_path);
+            dst_file.clone_from(&dst_path);
+            success |= res;
+        }
+        Ok(success)
+    }
+
+    pub async fn copy(&self, src_path: impl AsRef<str>, dst_path: impl AsRef<str>) -> LRes<bool> {
+        let src_path = src_path.as_ref();
+        let dst_path: &str = dst_path.as_ref();
+        trace!(
+            "copy {}:{} -> {}:{}",
+            self.src_uid, src_path, self.dst_uid, dst_path
+        );
+        let confirm = |fa: dv_api::Result<FileAttributes>, is_dir: bool| -> LRes<Option<i64>> {
+            match fa {
+                Ok(fa) if fa.is_dir() != is_dir => {
+                    whatever!(
+                        "{} is {}a directory",
+                        dst_path,
+                        is_dir.then_some("not ").unwrap_or_default()
+                    )
+                }
+                Err(e) if !e.is_not_found() => Err(e)?,
+                Ok(fa) => Ok(Some(fa.mtime.unwrap_or_default().into())),
+                _ => Ok(None),
             }
-            CheckInfo::File(file) => {
-                confirm(fa, dst_path.ends_with('/'))?;
-                check_copy_file(
-                    ctx,
-                    src_uid,
-                    file.path.as_path(),
-                    dst_uid,
-                    dst_path2,
-                    file.ts,
-                    (!dst_path.ends_with('/')).then_some(file.ts),
+        };
+        if src_path.ends_with('/') {
+            let DirInfo { path, files } = self.src.check_dir(src_path).log(self.interactor).await?;
+            let (dst_path, fa) = self.dst.check_file(dst_path.into()).await;
+            confirm(fa, true)?;
+            self.check_copy_dir(path, dst_path, files).await
+        } else {
+            let info = self.src.check_path(src_path).log(self.interactor).await?;
+            let dst_path2 = if dst_path.ends_with('/') {
+                format!(
+                    "{}{}",
+                    dst_path,
+                    src_path
+                        .rsplit_once('/')
+                        .map(|(_, name)| name)
+                        .unwrap_or(src_path)
                 )
-                .await
+                .into()
+            } else {
+                Cow::Borrowed(dst_path)
+            };
+            let (dst_path2, fa) = self.dst.check_file(dst_path2.as_ref().into()).await;
+            match info {
+                CheckInfo::Dir(dir) => {
+                    confirm(fa, true)?;
+                    self.check_copy_dir(dir.path, dst_path2, dir.files).await
+                }
+                CheckInfo::File(file) => {
+                    let dst_ts = confirm(fa, false)?;
+                    self.check_copy_file(&file.path, &dst_path2, file.ts, dst_ts)
+                        .await
+                }
             }
         }
     }
@@ -176,7 +251,7 @@ mod tests {
 
     use assert_fs::{TempDir, fixture::ChildPath, prelude::*};
 
-    use super::copy;
+    use super::CopyContext;
 
     async fn tenv(src: &[(&str, &str)], dst: &[(&str, &str)]) -> (TestDv, TempDir) {
         let int = TermInteractor::new().unwrap();
@@ -249,19 +324,20 @@ mod tests {
     }
     async fn copy_dir_fixture(src: &str, dst: &str) {
         let (dv, dir) = tenv(&[("f0", "f0"), ("f1", "f1")], &[]).await;
-        let ctx = dv.context();
-        assert!(
-            copy(&ctx, "this", src, "this", dst).await.unwrap(),
-            "copy should success"
-        );
+        let ctx = CopyContext::new(dv.context(), "this", "this", Some("o"))
+            .await
+            .unwrap();
+        assert!(ctx.copy(src, dst).await.unwrap(), "copy should success");
         content_assert(&dir.child("dst"), &[("f0", "f0"), ("f1", "f1")]);
         cache_assert2(ctx.cache, dir.child("src"), dir.child("dst"), &["f0", "f1"]).await;
     }
     async fn copy_file_fixture(dst: &str, expct: &str) {
         let (dv, dir) = tenv(&[("f0", "f0")], &[]).await;
-        let ctx = dv.context();
+        let ctx = CopyContext::new(dv.context(), "this", "this", Some("o"))
+            .await
+            .unwrap();
         assert!(
-            copy(&ctx, "this", "src/f0", "this", dst).await.unwrap(),
+            ctx.copy("src/f0", dst).await.unwrap(),
             "copy should success"
         );
         dir.child(expct).assert("f0");
@@ -287,17 +363,16 @@ mod tests {
     #[tokio::test]
     async fn test_update() {
         let (dv, dir) = tenv(&[("f0", "f00"), ("f1", "f11")], &[]).await;
-        let ctx = dv.context();
-        assert!(
-            copy(&ctx, "this", "src", "this", "dst").await.unwrap(),
-            "sync should success"
-        );
+        let ctx = CopyContext::new(dv.context(), "this", "this", Some("o"))
+            .await
+            .unwrap();
+        assert!(ctx.copy("src", "dst").await.unwrap(), "sync should success");
         sleep(Duration::from_secs(2)).await;
         let src = dir.child("src");
         src.child("f0").write_str("f0").unwrap();
         src.child("f1").write_str("f1").unwrap();
         assert!(
-            copy(&ctx, "this", "src/", "this", "dst").await.unwrap(),
+            ctx.copy("src/", "dst").await.unwrap(),
             "sync should success"
         );
         let dst = dir.child("dst");
@@ -309,14 +384,16 @@ mod tests {
     #[tokio::test]
     async fn test_donothing() {
         let (dv, dir) = tenv(&[("f0", "f0"), ("f1", "f1")], &[]).await;
-        let ctx = dv.context();
+        let ctx = CopyContext::new(dv.context(), "this", "this", Some("o"))
+            .await
+            .unwrap();
         let src = dir.child("src");
         assert!(
-            copy(&ctx, "this", "src/", "this", "dst").await.unwrap(),
+            ctx.copy("src/", "dst").await.unwrap(),
             "sync should success"
         );
         assert!(
-            !copy(&ctx, "this", "src/", "this", "dst").await.unwrap(),
+            !ctx.copy("src/", "dst").await.unwrap(),
             "sync should do nothing"
         );
         src.child("f0").assert("f0");

@@ -21,6 +21,12 @@ pub enum Error {
     Unknown(String),
 }
 
+impl Error {
+    pub fn unknown<T: std::fmt::Display>(msg: T) -> Self {
+        Self::Unknown(msg.to_string())
+    }
+}
+
 define!(
     russh::Error,
     russh_config::Error,

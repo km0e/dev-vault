@@ -66,13 +66,31 @@ impl User {
         };
         path
     }
-    pub async fn check_file(&self, path: &str) -> (camino::Utf8PathBuf, Result<FileAttributes>) {
+    pub async fn check_file(
+        &self,
+        path: &Utf8Path,
+    ) -> (camino::Utf8PathBuf, Result<FileAttributes>) {
         let path = self.normalize(path);
-        self.inner.file_attributes(path.as_str()).await
+        debug!("check_file:{}", path);
+        self.inner.file_attributes(&path).await
+    }
+    pub async fn get_mtime(&self, path: &Utf8Path) -> Result<Option<i64>> {
+        let (path, fa) = self.check_file(path).await;
+        match fa {
+            Ok(fa) => {
+                let ts = match fa.mtime {
+                    Some(time) => time as i64,
+                    None => whatever!("{path} mtime"),
+                };
+                Ok(Some(ts))
+            }
+            Err(e) if e.is_not_found() => Ok(None),
+            Err(e) => Err(e),
+        }
     }
     pub async fn check_path<'a, 'b: 'a>(&'b self, path: &'a str) -> Result<CheckInfo> {
         let path = self.normalize(path);
-        let (path, fa) = self.inner.file_attributes(path.as_str()).await;
+        let (path, fa) = self.inner.file_attributes(&path).await;
         debug!("check_path:{}", path);
         let fa = fa?;
         let info = if fa.is_dir() {
@@ -89,7 +107,7 @@ impl User {
     }
     pub async fn check_dir(&self, path: &str) -> Result<DirInfo> {
         let path = self.normalize(path);
-        let (path, fa) = self.inner.file_attributes(path.as_str()).await;
+        let (path, fa) = self.inner.file_attributes(&path).await;
         let fa = fa?;
         if !fa.is_dir() {
             whatever!("{} not a directory", path);

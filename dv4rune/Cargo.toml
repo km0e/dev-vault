@@ -20,23 +20,24 @@ tokio.workspace = true
 tracing.workspace = true
 async-trait.workspace = true
 
-rustix = { version = "1.0.2", features = ["pty", "fs"] }
+rustix = { version = "1.0.3", features = ["pty", "fs"] }
 
 rune = { version = "0.14.0", git = "https://github.com/rune-rs/rune.git" }
 rune-modules = { version = "0.14.0", git = "https://github.com/rune-rs/rune.git" }
 rusqlite = { version = "0.34.0", features = ["bundled"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 clap = { version = "4.5.32", features = ["derive"] }
-crossterm = "0.28.1"
-tempfile = "3.18.0"
+crossterm = { version = "0.28.1", features = ["event-stream"] }
+tempfile = "3.19.1"
 
-resplus = { version = "0.1.1", features = ["full"] }
+resplus = { version = "0.1.2", features = ["full"] }
+futures = "0.3.31"
 
 [target.'cfg(not(windows))'.dependencies]
 tokio-fd = "0.3.0"
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.60.0", features = [
+windows = { version = "0.61.1", features = [
     "Win32_Security",
     "Win32_Storage_FileSystem",
     "Win32_System_Console",

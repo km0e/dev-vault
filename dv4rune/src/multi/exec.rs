@@ -22,7 +22,7 @@ pub async fn exec(
         let ec = ctx.interactor.ask(pp).log(ctx.interactor).await?;
         if ec != 0 {
             let msg = format!("unexpect exit code: {}", ec);
-            ctx.interactor.log(&msg).await;
+            ctx.interactor.log(msg.clone()).await;
             Err(rune::support::Error::msg(msg))?
         }
     }

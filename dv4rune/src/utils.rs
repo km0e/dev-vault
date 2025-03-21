@@ -7,7 +7,7 @@ impl<I: Sync + Interactor, T, E: ToString> LogResult<I> for Result<T, E> {
         match &self {
             Ok(_) => {}
             Err(e) => {
-                int.log(&e.to_string()).await;
+                int.log(e.to_string()).await;
             }
         }
         self
