@@ -133,7 +133,7 @@ impl Ask {
             mut reader,
             mut exit,
         } = self;
-        enable_raw_mode()?;
+        let _guard = RawModeGuard::new()?;
         debug!("start to sync stdin to pty");
         let h = tokio::spawn(async move {
             let mut buf = [0; 1024];
@@ -184,7 +184,6 @@ impl Ask {
             }
         }
         h.abort();
-        disable_raw_mode()?;
         Ok(())
     }
 }
@@ -203,7 +202,9 @@ impl Confirm {
             print!("{}: {}, ", opt.0, opt.1);
         }
         print!("]:");
-        std::io::stdout().flush()?;
+        let mut stdout = std::io::stdout();
+        stdout.flush()?;
+        let _guard = RawModeGuard::new()?;
         let mut hash = self
             .opts
             .iter()
@@ -226,10 +227,26 @@ impl Confirm {
                     continue;
                 };
                 if let Some(&i) = hash.get(&c) {
+                    drop(_guard); //NOTE:MoveToNextLine is not working in raw mode?
+                    println!();
                     self.sel.send(i).expect("send confirm selection");
                     return Ok(());
                 }
             }
         }
+    }
+}
+
+struct RawModeGuard;
+impl RawModeGuard {
+    fn new() -> std::io::Result<Self> {
+        enable_raw_mode()?;
+        Ok(Self)
+    }
+}
+
+impl Drop for RawModeGuard {
+    fn drop(&mut self) {
+        disable_raw_mode().expect("disable raw mode");
     }
 }
