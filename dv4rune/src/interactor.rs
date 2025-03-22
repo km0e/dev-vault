@@ -1,7 +1,7 @@
 use std::{collections::HashMap, io::Write, time::Duration};
 
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
 use dv_api::{
@@ -158,7 +158,10 @@ impl Ask {
             }
             let ev = event::read()?;
             if let Event::Key(KeyEvent {
-                code, modifiers, ..
+                code,
+                modifiers,
+                kind: KeyEventKind::Press,
+                ..
             }) = ev
             {
                 let bytes: &[u8] = match (modifiers, code) {
@@ -207,9 +210,9 @@ impl Confirm {
         let _guard = RawModeGuard::new()?;
         let mut hash = self
             .opts
-            .iter()
+            .into_iter()
             .enumerate()
-            .map(|(i, (c, _))| (*c, i))
+            .map(|(i, (c, hint))| (c, (i, hint)))
             .collect::<HashMap<_, _>>();
         hash.reserve(0);
         loop {
@@ -220,15 +223,16 @@ impl Confirm {
             if let Event::Key(KeyEvent {
                 code,
                 modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Press,
                 ..
             }) = ev
             {
                 let KeyCode::Char(c) = code else {
                     continue;
                 };
-                if let Some(&i) = hash.get(&c) {
+                if let Some((i, hint)) = hash.remove(&c) {
                     drop(_guard); //NOTE:MoveToNextLine is not working in raw mode?
-                    println!();
+                    println!("{hint}");
                     self.sel.send(i).expect("send confirm selection");
                     return Ok(());
                 }
