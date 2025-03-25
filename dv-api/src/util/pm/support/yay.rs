@@ -1,23 +1,13 @@
 use super::dev::*;
 
-#[derive(Default, Debug)]
-pub struct Yay {}
-
-impl Yay {
-    pub async fn install(
-        &self,
-        u: &User,
-        interactor: &DynInteractor,
-        packages: &str,
-    ) -> crate::Result<bool> {
-        super::install(
-            u,
-            interactor,
-            format!("am=yay;pkgs=\"{}\";", packages),
-            include_str!("sh/pacman_query.sh"),
-            "yay",
-            &["-S", "--noconfirm"][..],
-        )
-        .await
-    }
+pub async fn install(u: &User, interactor: &DynInteractor, packages: &str) -> Result<bool> {
+    super::install(
+        u,
+        interactor,
+        format!("am=yay;pkgs=\"{}\";", packages),
+        include_str!("sh/pacman_query.sh"),
+        "yay",
+        &["-S", "--noconfirm"][..],
+    )
+    .await
 }

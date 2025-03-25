@@ -1,7 +1,7 @@
 use std::{collections::HashMap, future::IntoFuture, path::Path};
 
 use dv_api::{
-    LocalConfig, Os, Package, SSHConfig, User, UserCast,
+    LocalConfig, SSHConfig, User, UserCast,
     fs::{CheckInfo, Metadata, OpenFlags},
     process::Interactor,
     user::Utf8Path,
@@ -17,7 +17,7 @@ use tracing::info;
 use crate::{
     cache::SqliteCache,
     interactor::TermInteractor,
-    multi::{Context, action},
+    multi::{Context, Package, action},
 };
 use support::Result as LRes;
 
@@ -169,10 +169,9 @@ impl Dv {
 
 #[rune::function(free,path = LocalConfig::new)]
 fn local_config_new() -> LocalConfig {
-    LocalConfig {
-        hid: "local".to_string(),
-        mount: "~/.local/share/dv".into(),
-    }
+    let mut local = LocalConfig::new("local");
+    local.insert("mount", "~/.local/share/dv");
+    local
 }
 
 impl Dv {
@@ -200,14 +199,10 @@ impl Dv {
 
 #[rune::function(free,path = SSHConfig::new)]
 fn ssh_config_new(id: &str) -> SSHConfig {
-    SSHConfig {
-        hid: "local".to_string(),
-        mount: "~/.local/share/dv".into(),
-        host: id.to_string(),
-        is_system: false,
-        os: Os::Linux(dv_api::LinuxOs::Unknown),
-        passwd: None,
-    }
+    let mut ssh = SSHConfig::new("local", id);
+    ssh.insert("mount", "~/.local/share/dv");
+    ssh.os = "linux".into();
+    ssh
 }
 
 impl Dv {
@@ -241,9 +236,9 @@ impl Dv {
 
 impl Dv {
     #[rune::function(path = Self::app)]
-    async fn app(this: Ref<Self>, uid: Ref<str>, packages: Package) -> LRes<bool> {
+    async fn pm(this: Ref<Self>, uid: Ref<str>, packages: Package) -> LRes<bool> {
         let ctx = this.context();
-        crate::multi::app(&ctx, uid, packages).await
+        crate::multi::pm(&ctx, uid, packages).await
     }
 }
 pub fn module() -> Result<rune::Module, rune::ContextError> {
@@ -258,7 +253,7 @@ pub fn module() -> Result<rune::Module, rune::ContextError> {
     m.function_meta(Dv::user_params)?;
     m.function_meta(Dv::copy)?;
     crate::multi::register(&mut m)?;
-    m.function_meta(Dv::app)?;
+    m.function_meta(Dv::pm)?;
     m.function_meta(Dv::auto)?;
     m.function_meta(Dv::exec)?;
     m.function_meta(Dv::once)?;

@@ -4,8 +4,6 @@ use crate::util::Os;
 pub struct Params {
     pub user: String,
     pub os: Os,
-    pub session: Option<String>,
-    pub mount: Option<camino::Utf8PathBuf>,
 }
 
 impl Params {
@@ -17,14 +15,6 @@ impl Params {
     }
     pub fn os(&mut self, os: impl Into<Os>) -> &mut Self {
         self.os = os.into();
-        self
-    }
-    pub fn session(&mut self, session: impl Into<String>) -> &mut Self {
-        self.session = Some(session.into());
-        self
-    }
-    pub fn mount(&mut self, mount: impl Into<camino::Utf8PathBuf>) -> &mut Self {
-        self.mount = Some(mount.into());
         self
     }
 }

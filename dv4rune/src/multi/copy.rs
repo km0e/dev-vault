@@ -257,10 +257,8 @@ mod tests {
         let int = TermInteractor::new().unwrap();
         let cache = SqliteCache::memory();
         let dir = TempDir::new().unwrap();
-        let user = LocalConfig {
-            hid: "local".into(),
-            mount: dir.to_string_lossy().to_string(),
-        };
+        let mut user = LocalConfig::new("local");
+        user.insert("mount", dir.to_string_lossy());
         let mut users = HashMap::new();
         users.insert("this".to_string(), user.cast().await.unwrap());
         let src_dir = dir.child("src");

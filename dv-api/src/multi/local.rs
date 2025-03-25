@@ -4,21 +4,59 @@ use super::dev::*;
 use autox::AutoX;
 #[cfg(not(windows))]
 use std::env;
-use std::path::Path;
 #[cfg(feature = "path-home")]
 use std::path::PathBuf;
+use std::{collections::HashMap, path::Path};
 use tracing::{trace, warn};
 
 mod file;
 
 #[cfg_attr(feature = "rune", derive(rune::Any))]
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct LocalConfig {
     #[cfg_attr(feature = "rune", rune(get, set))]
     pub hid: String,
-    #[cfg_attr(feature = "rune", rune(get, set))]
-    pub mount: String,
+    pub variables: HashMap<String, String>,
 }
+
+impl LocalConfig {
+    pub fn insert(&mut self, key: impl Into<String>, value: impl Into<String>) -> Option<String> {
+        self.variables.insert(key.into(), value.into())
+    }
+}
+
+#[cfg(feature = "rune")]
+#[rune::function(instance, protocol = INDEX_SET)]
+fn index_set(this: &mut LocalConfig, key: String, value: String) {
+    this.insert(key, value);
+}
+
+impl LocalConfig {
+    pub fn new(hid: impl Into<String>) -> Self {
+        let mut variables = HashMap::new();
+        if let Some(session) = {
+            #[cfg(target_os = "linux")]
+            {
+                std::env::var("XDG_SESSION_TYPE").ok()
+            }
+            #[cfg(target_os = "macos")]
+            {
+                None
+            }
+            #[cfg(target_os = "windows")]
+            {
+                None::<String>
+            }
+        } {
+            variables.insert("session".into(), session);
+        }
+        Self {
+            hid: hid.into(),
+            variables,
+        }
+    }
+}
+
 fn detect() -> Params {
     let user = {
         #[cfg(target_os = "linux")]
@@ -47,22 +85,6 @@ fn detect() -> Params {
     } else {
         "unknown".into()
     };
-    if let Some(session) = {
-        #[cfg(target_os = "linux")]
-        {
-            std::env::var("XDG_SESSION_TYPE").ok()
-        }
-        #[cfg(target_os = "macos")]
-        {
-            None
-        }
-        #[cfg(target_os = "windows")]
-        {
-            None::<String>
-        }
-    } {
-        p.session(session);
-    }
     p
 }
 
@@ -77,7 +99,6 @@ fn is_user_admin() -> bool {
 
     unsafe {
         let mut sid = std::ptr::null_mut();
-        // 创建管理员组的 SID
         let success = AllocateAndInitializeSid(
             &SECURITY_NT_AUTHORITY,
             2,
@@ -96,11 +117,9 @@ fn is_user_admin() -> bool {
             return false;
         }
 
-        // 检查令牌成员资格
         let mut is_member = 0;
         let check_success = CheckTokenMembership(std::ptr::null_mut(), sid, &mut is_member) != 0;
 
-        // 释放 SID 内存
         FreeSid(sid);
 
         check_success && is_member != 0
@@ -120,17 +139,16 @@ impl UserCast for LocalConfig {
                 rustix::process::getuid().is_root()
             }
         };
-        let mut p = detect();
-        p.mount(self.mount);
+        let p = detect();
         let dev = This::new(is_system).await?;
-        User::new(self.hid, p, is_system, dev).await
+        User::new(self.hid, p, self.variables, is_system, dev).await
     }
 }
 
 pub(crate) struct This {
     #[cfg(feature = "path-home")]
     home: Option<PathBuf>,
-    autox: AutoX, // TODO: add more
+    autox: AutoX,
 }
 
 impl This {

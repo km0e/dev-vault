@@ -1,6 +1,6 @@
 use crate::user::Utf8Path;
 use resplus::attach;
-use std::borrow::Cow;
+use std::{borrow::Cow, collections::HashMap};
 
 use async_trait::async_trait;
 use e4pty::prelude::*;
@@ -17,12 +17,13 @@ use crate::{
 
 #[async_trait]
 pub trait UserCast {
-    async fn cast(self) -> crate::Result<User>;
+    async fn cast(self) -> Result<User>;
 }
 
 #[derive(Debug)]
 pub struct User {
     pub params: Params,
+    pub variables: HashMap<String, String>,
     pub hid: String,
     pub is_system: bool,
     inner: BoxedUser,
@@ -33,18 +34,17 @@ impl User {
     pub async fn new(
         hid: impl Into<String>,
         params: Params,
+        variables: HashMap<String, String>,
         is_system: bool,
         dev: impl Into<BoxedUser>,
-    ) -> crate::Result<Self> {
-        info!(
-            "new user:{} os:{} session:{:?} mount:{:?}",
-            params.user, params.os, params.session, params.mount
-        );
+    ) -> Result<Self> {
+        info!("new user:{} os:{}", params.user, params.os);
         let inner = dev.into();
         let pm = super::util::Pm::new(&inner, &params.os).await?;
         Ok(Self {
             hid: hid.into(),
             params,
+            variables,
             is_system,
             inner,
             pm,
@@ -55,7 +55,7 @@ impl User {
         let path = if path.has_root() {
             Cow::Borrowed(path)
         } else {
-            let path = match (path.starts_with("~"), self.params.mount.as_ref()) {
+            let path = match (path.starts_with("~"), self.variables.get("mount")) {
                 (false, Some(mount)) => {
                     camino::Utf8PathBuf::from(format!("{}/{}", mount.as_str(), path.as_str()))
                         .into()
@@ -132,8 +132,8 @@ impl User {
     pub async fn auto(&self, name: &str, action: &str, args: Option<&str>) -> Result<()> {
         self.inner.auto(name, action, args).await
     }
-    pub async fn app(&self, interactor: &DynInteractor, packages: &Package) -> crate::Result<bool> {
-        self.pm.install(self, interactor, packages).await
+    pub async fn app(&self, interactor: &DynInteractor, packages: Package<'_>) -> Result<bool> {
+        packages.install(self, interactor, &self.pm).await
     }
     pub async fn pty(&self, s: Script<'_, '_>, win_size: WindowSize) -> Result<BoxedPty> {
         self.inner.pty(s, win_size).await
@@ -141,7 +141,7 @@ impl User {
     pub async fn exec(&self, s: Script<'_, '_>) -> Result<Output> {
         self.inner.exec(s).await
     }
-    pub async fn open(&self, path: &Utf8Path, opt: OpenFlags) -> crate::Result<BoxedFile> {
+    pub async fn open(&self, path: &Utf8Path, opt: OpenFlags) -> Result<BoxedFile> {
         let path = self.normalize(path);
         attach!(self.inner.open(path.as_str(), opt), 0).await
     }

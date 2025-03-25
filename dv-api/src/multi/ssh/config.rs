@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use resplus::flog;
 use russh::client::{self, AuthResult, Handle};
@@ -15,8 +15,6 @@ pub struct SSHConfig {
     #[cfg_attr(feature = "rune", rune(get, set))]
     pub hid: String,
     #[cfg_attr(feature = "rune", rune(get, set))]
-    pub mount: String,
-    #[cfg_attr(feature = "rune", rune(get, set))]
     pub host: String,
     #[cfg_attr(feature = "rune", rune(get, set))]
     pub is_system: bool,
@@ -24,6 +22,19 @@ pub struct SSHConfig {
     pub os: Os,
     #[cfg_attr(feature = "rune", rune(get, set))]
     pub passwd: Option<String>,
+    variables: HashMap<String, String>,
+}
+
+impl SSHConfig {
+    pub fn insert(&mut self, key: impl Into<String>, value: impl Into<String>) -> Option<String> {
+        self.variables.insert(key.into(), value.into())
+    }
+}
+
+#[cfg(feature = "rune")]
+#[rune::function(instance, protocol = INDEX_SET)]
+fn index_set(this: &mut SSHConfig, key: String, value: String) {
+    this.insert(key, value);
 }
 
 impl SSHConfig {
@@ -40,7 +51,6 @@ impl UserCast for SSHConfig {
     async fn cast(self) -> Result<User> {
         let (h, user) = connect(self.host, self.passwd).await?;
         let mut p = Params::new(user);
-        p.mount(self.mount);
         if !self.os.is_unknown() {
             p.os(self.os);
         }
@@ -61,7 +71,7 @@ impl UserCast for SSHConfig {
             command_util,
         };
 
-        User::new(self.hid, p, self.is_system, sys).await
+        User::new(self.hid, p, self.variables, self.is_system, sys).await
     }
 }
 
@@ -134,7 +144,8 @@ async fn detect2(h: &Handle<Client>, p: &mut Params) -> DetectResult {
     if p.os.is_linux() {
         detect(h, p).await
     } else {
-        whatever!("{} not supported", p.os)
+        warn!("{} os not supported", p.os);
+        Ok(None)
     }
 }
 async fn detect(h: &Handle<Client>, p: &mut Params) -> DetectResult {
@@ -165,14 +176,8 @@ async fn detect(h: &Handle<Client>, p: &mut Params) -> DetectResult {
     }
 
     #[cfg(feature = "path-home")]
-    let [home, session] = flog!(extract(h, "env", &["HOME", "XDG_SESSION_TYPE"])).await?;
+    let [home] = flog!(extract(h, "env", &["HOME"])).await?;
 
-    #[cfg(not(feature = "path-home"))]
-    let [session] = extract(h, "env", &["XDG_SESSION_TYPE"]).await?;
-
-    if let Some(session) = session {
-        p.session(session);
-    }
     let [os] = extract(
         h,
         "sh -c 'cat /etc/os-release 2>/dev/null || cat /usr/lib/os-release 2>/dev/null'",

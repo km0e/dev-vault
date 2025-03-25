@@ -12,10 +12,10 @@ mod mock;
 #[async_trait]
 pub trait CommandUtil<U: UserImpl + Send + Sync> {
     //auto
-    async fn setup(&self, _user: &U, _name: &str) -> crate::Result<i32> {
+    async fn setup(&self, _user: &U, _name: &str) -> Result<i32> {
         whatever!("setup command unimplemented")
     }
-    async fn reload(&self, _user: &U, _name: &str) -> crate::Result<i32> {
+    async fn reload(&self, _user: &U, _name: &str) -> Result<i32> {
         whatever!("reload command unimplemented")
     }
     //file utils
@@ -25,7 +25,7 @@ pub trait CommandUtil<U: UserImpl + Send + Sync> {
         _src_path: &str,
         _dst_name: &str,
         _dst_path: &str,
-    ) -> crate::Result<i32> {
+    ) -> Result<i32> {
         whatever!("copy command unimplemented")
     }
 }

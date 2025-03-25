@@ -1,18 +1,12 @@
 use super::dev::{self, *};
-
-mod apk;
-pub use apk::Apk;
-mod apt;
-pub use apt::Apt;
-mod pacman;
-pub use pacman::Pacman;
-mod yay;
 use tracing::info;
-pub use yay::Yay;
-mod paru;
-pub use paru::Paru;
-mod winget;
-pub use winget::WinGet;
+
+pub mod apk;
+pub mod apt;
+pub mod pacman;
+pub mod paru;
+pub mod winget;
+pub mod yay;
 
 async fn install(
     u: &User,
@@ -36,8 +30,7 @@ async fn install(
         program: pm,
         args: Box::new(args.chain(pkgs)),
     };
-    let pp = u.pty(s, int.window_size().await).await?; //TODO:detect
-    //size
+    let pp = u.pty(s, int.window_size().await).await?;
     let ec = int.ask(pp).await?;
     if ec != 0 {
         whatever!("unexpected exit status {}", ec);

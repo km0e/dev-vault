@@ -11,10 +11,8 @@ repository = "https://github.com/km0e/dev-vault.git"
 tokio = { version = "1.44.1", features = [
     "fs",
     "io-std",
-    "sync",
     "rt-multi-thread",
     "macros",
-    "time",            # windows
 ] }
 tracing = { version = "0.1.41" }
 async-trait = "0.1.88"

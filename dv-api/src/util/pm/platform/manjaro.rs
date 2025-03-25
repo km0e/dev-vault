@@ -2,7 +2,7 @@ use tracing::debug;
 
 use super::dev::*;
 
-pub async fn detect(u: &BoxedUser) -> crate::Result<Pm> {
+pub async fn detect(u: &BoxedUser) -> Result<Pm> {
     debug!("try to detect manjaro package manager");
     let ec = u
         .exec(Script::sh(Box::new(
@@ -22,12 +22,12 @@ fi
 
     if ec == 1 {
         debug!("detected yay as package manager");
-        Ok(Yay::default().into())
+        Ok(Pm::Yay)
     } else if ec == 2 {
         debug!("detected paru as package manager");
-        Ok(Paru::default().into())
+        Ok(Pm::Paru)
     } else {
         debug!("detected pacman as package manager");
-        Ok(Pacman::default().into())
+        Ok(Pm::Pacman)
     }
 }
