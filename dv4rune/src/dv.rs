@@ -1,15 +1,17 @@
-use std::{collections::HashMap, future::IntoFuture, path::Path};
+use std::{collections::HashMap, future::IntoFuture, path::Path, sync::Arc};
 
 use dv_api::{
-    LocalConfig, SSHConfig, User, UserCast,
+    Config, User,
+    dev::Dev,
     fs::{CheckInfo, Metadata, OpenFlags},
     process::Interactor,
     user::Utf8Path,
+    whatever,
 };
 use resplus::attach;
 use rune::{
     Any,
-    runtime::{self, Mut, Object, Ref},
+    runtime::{self, Mut, Ref},
     support,
 };
 use tracing::info;
@@ -23,8 +25,19 @@ use support::Result as LRes;
 
 #[derive(Debug, Default)]
 struct Device {
+    dev: Arc<Dev>,
     system: Option<String>,
     users: Vec<String>,
+}
+
+impl Device {
+    fn new(dev: Arc<Dev>) -> Self {
+        Self {
+            dev,
+            system: None,
+            users: Vec::new(),
+        }
+    }
 }
 
 #[derive(Any)]
@@ -51,20 +64,6 @@ impl Dv {
     }
 }
 impl Dv {
-    #[rune::function(path = Self::user_params)]
-    async fn user_params(this: Ref<Self>, id: Ref<str>) -> LRes<Object> {
-        let user = this.context().get_user(id).await?;
-        let mut obj = Object::new();
-        obj.insert(
-            rune::alloc::String::try_from("os")?,
-            rune::to_value(user.params.os)?,
-        )?;
-        obj.insert(
-            rune::alloc::String::try_from("hid")?,
-            rune::to_value(user.hid.as_str())?,
-        )?;
-        Ok(obj)
-    }
     #[rune::function(path = Self::copy)]
     async fn copy(
         this: Ref<Self>,
@@ -167,69 +166,64 @@ impl Dv {
     }
 }
 
-#[rune::function(free,path = LocalConfig::new)]
-fn local_config_new() -> LocalConfig {
-    let mut local = LocalConfig::new("local");
-    local.insert("mount", "~/.local/share/dv");
-    local
+#[rune::function(free,path = Config::cur)]
+fn current_user_config() -> Config {
+    let mut cfg = Config::default();
+    cfg.insert("HID", "local");
+    cfg.insert("MOUNT", "~/.local/share/dv");
+    cfg.insert("OS", "linux");
+    cfg
+}
+
+#[rune::function(free,path = Config::ssh)]
+fn ssh_user_config(host: &str) -> Config {
+    let mut cfg = Config::default();
+    cfg.insert("HOST", host);
+    cfg.insert("MOUNT", "~/.local/share/dv");
+    cfg.insert("OS", "linux");
+    cfg
+}
+
+#[rune::function(instance, protocol = INDEX_SET)]
+fn config_index_set(this: &mut Config, key: String, value: String) {
+    this.insert(key, value);
 }
 
 impl Dv {
-    #[rune::function(path = Self::add_current)]
-    async fn add_current(mut this: Mut<Self>, id: Ref<str>, user: LocalConfig) -> LRes<()> {
+    #[rune::function(path = Self::add_user)]
+    async fn add_user(mut this: Mut<Dv>, id: Ref<str>, cfg: Config) -> LRes<()> {
         let id = id.as_ref();
-        let u = user.cast().await.unwrap();
-        if this.users.insert(id.to_string(), u).is_some() {
-            panic!("user already exists");
+        if this.users.contains_key(id) {
+            whatever!("user {} already exists", id);
         }
-        let d = this.devices.entry(id.to_string()).or_default();
-        d.users.push(id.to_string());
-        let u = &this.users[id];
+        let u = if let Some(hid) = cfg.hid() {
+            let hid = hid.to_string();
+            if let Some(dev) = this.devices.get_mut(&hid) {
+                let u = cfg.connect(Some(dev.dev.clone())).await?;
+                if u.is_system {
+                    dev.system = Some(id.to_string());
+                } else {
+                    dev.users.push(id.to_string());
+                }
+                u
+            } else {
+                let u = cfg.connect(None).await?;
+                let mut dev = Device::new(u.dev.clone());
+                if u.is_system {
+                    dev.system = Some(id.to_string());
+                } else {
+                    dev.users.push(id.to_string());
+                }
+                this.devices.insert(hid.to_string(), dev);
+                u
+            }
+        } else {
+            cfg.connect(None).await?
+        };
         this.interactor
-            .log(format!(
-                "local user: {:<10}, hid: {:<10}, os: {:<8}",
-                id,
-                u.hid,
-                u.params.os.as_ref()
-            ))
+            .log(format!("user: {:<10}, os: {:<8}", id, u.dev.os.as_ref()))
             .await;
-        Ok(())
-    }
-}
-
-#[rune::function(free,path = SSHConfig::new)]
-fn ssh_config_new(id: &str) -> SSHConfig {
-    let mut ssh = SSHConfig::new("local", id);
-    ssh.insert("mount", "~/.local/share/dv");
-    ssh.os = "linux".into();
-    ssh
-}
-
-impl Dv {
-    #[rune::function(path = Self::add_ssh_user)]
-    async fn add_ssh_user(mut this: Mut<Self>, id: Ref<str>, user: SSHConfig) -> LRes<()> {
-        let id = id.as_ref();
-        info!("ssh user: {:?}", user);
-        let u = user.cast().await.unwrap();
-        let is_system = u.is_system;
-        if this.users.insert(id.to_owned(), u).is_some() {
-            panic!("user already exists");
-        }
-        let d = this.devices.entry(id.to_owned()).or_default();
-        match (is_system, &mut d.system) {
-            (true, Some(_)) => panic!("system user already exists"),
-            (true, None) => d.system = Some(id.to_owned()),
-            (false, _) => d.users.push(id.to_owned()),
-        }
-        let u = &this.users[id];
-        this.interactor
-            .log(format!(
-                "ssh   user: {:<10}, hid: {:<10}, os: {:<8}",
-                id,
-                u.hid,
-                u.params.os.as_ref()
-            ))
-            .await;
+        this.users.insert(id.to_string(), u);
         Ok(())
     }
 }
@@ -244,13 +238,11 @@ impl Dv {
 pub fn module() -> Result<rune::Module, rune::ContextError> {
     let mut m = rune::Module::default();
     m.ty::<Dv>()?;
-    m.ty::<LocalConfig>()?;
-    m.function_meta(local_config_new)?;
-    m.function_meta(Dv::add_current)?;
-    m.ty::<SSHConfig>()?;
-    m.function_meta(ssh_config_new)?;
-    m.function_meta(Dv::add_ssh_user)?;
-    m.function_meta(Dv::user_params)?;
+    m.ty::<Config>()?;
+    m.function_meta(current_user_config)?;
+    m.function_meta(ssh_user_config)?;
+    m.function_meta(config_index_set)?;
+    m.function_meta(Dv::add_user)?;
     m.function_meta(Dv::copy)?;
     crate::multi::register(&mut m)?;
     m.function_meta(Dv::pm)?;

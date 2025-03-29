@@ -1,152 +1,16 @@
-use crate::{Error, whatever, wrap::UserCast};
+use crate::{Error, whatever};
 
-use super::dev::*;
+use super::dev::{self, *};
 use autox::AutoX;
-#[cfg(not(windows))]
-use std::env;
-#[cfg(feature = "path-home")]
-use std::path::PathBuf;
-use std::{collections::HashMap, path::Path};
-use tracing::{trace, warn};
 
+use std::path::{Path, PathBuf};
+use tracing::trace;
+
+mod config;
+pub use config::create;
 mod file;
 
-#[cfg_attr(feature = "rune", derive(rune::Any))]
-#[derive(Debug, Default)]
-pub struct LocalConfig {
-    #[cfg_attr(feature = "rune", rune(get, set))]
-    pub hid: String,
-    pub variables: HashMap<String, String>,
-}
-
-impl LocalConfig {
-    pub fn insert(&mut self, key: impl Into<String>, value: impl Into<String>) -> Option<String> {
-        self.variables.insert(key.into(), value.into())
-    }
-}
-
-#[cfg(feature = "rune")]
-#[rune::function(instance, protocol = INDEX_SET)]
-fn index_set(this: &mut LocalConfig, key: String, value: String) {
-    this.insert(key, value);
-}
-
-impl LocalConfig {
-    pub fn new(hid: impl Into<String>) -> Self {
-        let mut variables = HashMap::new();
-        if let Some(session) = {
-            #[cfg(target_os = "linux")]
-            {
-                std::env::var("XDG_SESSION_TYPE").ok()
-            }
-            #[cfg(target_os = "macos")]
-            {
-                None
-            }
-            #[cfg(target_os = "windows")]
-            {
-                None::<String>
-            }
-        } {
-            variables.insert("session".into(), session);
-        }
-        Self {
-            hid: hid.into(),
-            variables,
-        }
-    }
-}
-
-fn detect() -> Params {
-    let user = {
-        #[cfg(target_os = "linux")]
-        {
-            env::var("USER").unwrap_or("unspecified".to_string())
-        }
-        #[cfg(target_os = "macos")]
-        {
-            "macos".to_string()
-        }
-        #[cfg(target_os = "windows")]
-        {
-            "windows".to_string()
-        }
-    };
-    let mut p = Params::new(user);
-    p.os = if cfg!(target_os = "linux") {
-        etc_os_release::OsRelease::open()
-            .inspect_err(|e| warn!("can't open [/etc/os-release | /usr/lib/os-release]: {}", e))
-            .map(|os_release| os_release.id().into())
-            .unwrap_or("linux".into())
-    } else if cfg!(target_os = "macos") {
-        "macos".into()
-    } else if cfg!(target_os = "windows") {
-        "windows".into()
-    } else {
-        "unknown".into()
-    };
-    p
-}
-
-#[cfg(windows)]
-fn is_user_admin() -> bool {
-    use windows_sys::Win32::Security::{
-        AllocateAndInitializeSid, CheckTokenMembership, FreeSid, SECURITY_NT_AUTHORITY,
-    };
-    use windows_sys::Win32::System::SystemServices::{
-        DOMAIN_ALIAS_RID_ADMINS, SECURITY_BUILTIN_DOMAIN_RID,
-    };
-
-    unsafe {
-        let mut sid = std::ptr::null_mut();
-        let success = AllocateAndInitializeSid(
-            &SECURITY_NT_AUTHORITY,
-            2,
-            SECURITY_BUILTIN_DOMAIN_RID as u32,
-            DOMAIN_ALIAS_RID_ADMINS as u32,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            &mut sid,
-        ) != 0;
-
-        if !success {
-            return false;
-        }
-
-        let mut is_member = 0;
-        let check_success = CheckTokenMembership(std::ptr::null_mut(), sid, &mut is_member) != 0;
-
-        FreeSid(sid);
-
-        check_success && is_member != 0
-    }
-}
-
-#[async_trait]
-impl UserCast for LocalConfig {
-    async fn cast(self) -> crate::Result<User> {
-        let is_system = {
-            #[cfg(windows)]
-            {
-                is_user_admin()
-            }
-            #[cfg(not(windows))]
-            {
-                rustix::process::getuid().is_root()
-            }
-        };
-        let p = detect();
-        let dev = This::new(is_system).await?;
-        User::new(self.hid, p, self.variables, is_system, dev).await
-    }
-}
-
 pub(crate) struct This {
-    #[cfg(feature = "path-home")]
     home: Option<PathBuf>,
     autox: AutoX,
 }
@@ -155,12 +19,10 @@ impl This {
     pub async fn new(is_system: bool) -> Result<Self> {
         let autox = AutoX::new(is_system).await.map_err(Error::unknown)?;
         Ok(Self {
-            #[cfg(feature = "path-home")]
             home: home::home_dir(),
             autox,
         })
     }
-    #[cfg(feature = "path-home")]
     fn expand_home<'a, 'b: 'a>(&'b self, path: &'a str) -> std::borrow::Cow<'a, Path> {
         if let Some(home) = &self.home {
             if let Some(path) = path.strip_prefix("~/") {
@@ -179,10 +41,7 @@ impl UserImpl for This {
         &self,
         path: &Utf8Path,
     ) -> (camino::Utf8PathBuf, Result<FileAttributes>) {
-        #[cfg(feature = "path-home")]
         let path2 = self.expand_home(path.as_str());
-        #[cfg(not(feature = "path-home"))]
-        let path2 = Path::new(path);
         (
             path2.to_string_lossy().to_string().into(),
             std::fs::metadata(&path2)
@@ -228,15 +87,9 @@ impl UserImpl for This {
         }
     }
     async fn copy(&self, src_path: &str, _: &str, dst_path: &str) -> Result<()> {
-        #[cfg(feature = "path-home")]
         let src2 = self.expand_home(src_path);
-        #[cfg(not(feature = "path-home"))]
-        let src2 = Path::new(src_path);
 
-        #[cfg(feature = "path-home")]
         let dst2 = self.expand_home(dst_path);
-        #[cfg(not(feature = "path-home"))]
-        let dst2 = Path::new(dst_path);
 
         let Err(e) = std::fs::copy(&src2, &dst2) else {
             return Ok(());

@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, sync::LazyLock};
 
 use crate::{
     Result,
@@ -13,6 +13,9 @@ pub struct Output {
 }
 pub use camino::Utf8Path;
 pub use camino::Utf8PathBuf;
+
+pub static VARIABLE_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"\$\{([^}]+)\}").expect("invalid regex"));
 
 #[async_trait::async_trait]
 pub trait UserImpl {

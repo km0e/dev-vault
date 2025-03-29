@@ -47,9 +47,9 @@ macro_rules! into_boxed_command_util {
 }
 pub(crate) use into_boxed_command_util;
 
-impl<U: UserImpl + Send + Sync> From<&Params> for BoxedCommandUtil<U> {
-    fn from(value: &Params) -> Self {
-        match &value.os {
+impl<U: UserImpl + Send + Sync> From<&Os> for BoxedCommandUtil<U> {
+    fn from(value: &Os) -> Self {
+        match &value {
             Os::Linux(os) => linux::try_match(os).unwrap_or_else(|| MockCommandUtil {}.into()),
             _ => MockCommandUtil {}.into(),
         }

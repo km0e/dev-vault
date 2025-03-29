@@ -17,7 +17,7 @@ bitflags = "2.9.0"
 tempfile = "3.19.1"
 etc-os-release = "0.1.1"
 fastrand = "2.3.0"
-home = { workspace = true, optional = true }
+home = { workspace = true }
 # russh = { version = "0.50.4", features = [
 #     "async-trait",
 # ], git = "https://github.com/km0e/russh.git", branch = "pty" }
@@ -33,6 +33,7 @@ strum = { version = "0.27.1", features = ["derive"] }
 thiserror = "2.0.12"
 resplus = { version = "0.1.2", features = ["full"] }
 camino = "1.1.9"
+regex = "1.11.1"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59.0", features = [
@@ -46,6 +47,5 @@ zbus = "5.5.0"
 
 [features]
 default = []
-path-home = ["dep:home"]
 rune = ["dep:rune"]
-full = ["path-home", "rune"]
+full = ["rune"]

@@ -3,76 +3,39 @@ use std::{collections::HashMap, sync::Arc};
 use resplus::flog;
 use russh::client::{self, AuthResult, Handle};
 use tokio::io::AsyncReadExt;
-use tracing::warn;
+use tracing::{info, warn};
 
-use crate::{Result, util::Os, whatever};
+use crate::{Config, Pm, Result, dev::Dev, util::Os, whatever};
 
 use super::{Client, SSHSession, dev::*};
 
-#[cfg_attr(feature = "rune", derive(rune::Any))]
-#[derive(Debug, Default)]
-pub struct SSHConfig {
-    #[cfg_attr(feature = "rune", rune(get, set))]
-    pub hid: String,
-    #[cfg_attr(feature = "rune", rune(get, set))]
-    pub host: String,
-    #[cfg_attr(feature = "rune", rune(get, set))]
-    pub is_system: bool,
-    #[cfg_attr(feature = "rune", rune(get, set))]
-    pub os: Os,
-    #[cfg_attr(feature = "rune", rune(get, set))]
-    pub passwd: Option<String>,
-    variables: HashMap<String, String>,
-}
+pub async fn create(host: String, mut cfg: Config, dev: Option<Arc<Dev>>) -> Result<User> {
+    let (h, user) = connect(host, cfg.get("passwd").cloned()).await?;
+    cfg.entry("USER".into()).or_insert(user.clone());
+    let os = cfg.get("OS").map(|s| s.as_str()).unwrap_or("");
+    let mut os = os.into();
+    let env = detect2(&h, &mut os).await?;
+    let command_util = (&os).into();
+    let channel = flog!(h.channel_open_session()).await?;
+    flog!(channel.request_subsystem(true, "sftp")).await?;
+    let sftp = russh_sftp::client::SftpSession::new(channel.into_stream()).await?;
 
-impl SSHConfig {
-    pub fn insert(&mut self, key: impl Into<String>, value: impl Into<String>) -> Option<String> {
-        self.variables.insert(key.into(), value.into())
-    }
-}
-
-#[cfg(feature = "rune")]
-#[rune::function(instance, protocol = INDEX_SET)]
-fn index_set(this: &mut SSHConfig, key: String, value: String) {
-    this.insert(key, value);
-}
-
-impl SSHConfig {
-    pub fn new(hid: impl Into<String>, host: impl Into<String>) -> Self {
-        Self {
-            hid: hid.into(),
-            host: host.into(),
-            ..Default::default()
+    let sys = SSHSession {
+        session: h,
+        sftp,
+        env,
+        command_util,
+    };
+    let u: BoxedUser = sys.into();
+    let dev = match dev {
+        Some(dev) => dev,
+        None => {
+            info!("config os:{}", os);
+            let pm = Pm::new(&u, &os).await?;
+            Arc::new(Dev { pm, os })
         }
-    }
-}
-#[async_trait::async_trait]
-impl UserCast for SSHConfig {
-    async fn cast(self) -> Result<User> {
-        let (h, user) = connect(self.host, self.passwd).await?;
-        let mut p = Params::new(user);
-        if !self.os.is_unknown() {
-            p.os(self.os);
-        }
-        #[cfg(feature = "path-home")]
-        let home = detect2(&h, &mut p).await?;
-        #[cfg(not(feature = "path-home"))]
-        detect2(&h, &mut p).await?;
-        let channel = flog!(h.channel_open_session()).await?;
-        flog!(channel.request_subsystem(true, "sftp")).await?;
-        let sftp = russh_sftp::client::SftpSession::new(channel.into_stream()).await?;
-
-        let command_util = (&p).into();
-        let sys = SSHSession {
-            session: h,
-            sftp,
-            #[cfg(feature = "path-home")]
-            home,
-            command_util,
-        };
-
-        User::new(self.hid, p, self.variables, self.is_system, sys).await
-    }
+    };
+    User::new(cfg.vars, cfg.is_system.unwrap_or(false), u, dev).await
 }
 
 async fn connect(host: String, passwd: Option<String>) -> Result<(Handle<Client>, String)> {
@@ -134,32 +97,25 @@ async fn connect(host: String, passwd: Option<String>) -> Result<(Handle<Client>
     )
 }
 
-#[cfg(feature = "path-home")]
-type DetectResult = Result<Option<String>>;
-
-#[cfg(not(feature = "path-home"))]
-type DetectResult = Result<()>;
-
-async fn detect2(h: &Handle<Client>, p: &mut Params) -> DetectResult {
-    if p.os.is_linux() {
-        detect(h, p).await
+async fn detect2(h: &Handle<Client>, os: &mut Os) -> Result<HashMap<String, String>> {
+    if os.is_linux() {
+        detect(h, os).await
     } else {
-        warn!("{} os not supported", p.os);
-        Ok(None)
+        warn!("{} os not supported", os);
+        Ok(Default::default())
     }
 }
-async fn detect(h: &Handle<Client>, p: &mut Params) -> DetectResult {
-    async fn extract<const S: usize>(
+async fn detect(h: &Handle<Client>, os: &mut Os) -> Result<HashMap<String, String>> {
+    async fn _extract(
         h: &Handle<Client>,
         cmd: &str,
-        keys: &[&str; S],
-    ) -> std::result::Result<[Option<String>; S], russh::Error> {
+        mut insert: impl FnMut(&str, &str),
+    ) -> std::result::Result<(), russh::Error> {
         let mut channel = h.channel_open_session().await?;
         channel.exec(true, cmd).await?;
         let mut output = String::with_capacity(1024);
         channel.make_reader().read_to_string(&mut output).await?;
 
-        let mut values = [const { None }; S];
         for line in output.split('\n') {
             let mut kv = line.splitn(2, '=');
             let Some(key) = kv.next() else {
@@ -168,28 +124,47 @@ async fn detect(h: &Handle<Client>, p: &mut Params) -> DetectResult {
             let Some(value) = kv.next() else {
                 continue;
             };
+            insert(key, value);
+        }
+        Ok(())
+    }
+    async fn extract_special<const S: usize>(
+        h: &Handle<Client>,
+        cmd: &str,
+        keys: &[&str; S],
+    ) -> std::result::Result<[Option<String>; S], russh::Error> {
+        let mut values = [const { None }; S];
+        _extract(h, cmd, |key, value| {
             if let Some(i) = keys.iter().position(|&k| key == k) {
                 values[i] = Some(value.to_string());
             }
-        }
+        })
+        .await?;
         Ok(values)
     }
+    async fn extract_all(
+        h: &Handle<Client>,
+        cmd: &str,
+    ) -> std::result::Result<HashMap<String, String>, russh::Error> {
+        let mut map = HashMap::new();
+        _extract(h, cmd, |key, value| {
+            map.insert(key.to_string(), value.to_string());
+        })
+        .await?;
+        Ok(map)
+    }
 
-    #[cfg(feature = "path-home")]
-    let [home] = flog!(extract(h, "env", &["HOME"])).await?;
+    let env = flog!(extract_all(h, "env")).await?;
 
-    let [os] = extract(
+    let [os_d] = extract_special(
         h,
         "sh -c 'cat /etc/os-release 2>/dev/null || cat /usr/lib/os-release 2>/dev/null'",
         &["ID"],
     )
     .await?;
-    if let Some(os) = os {
-        p.os(os);
+    if let Some(os_d) = os_d {
+        *os = os_d.into();
     }
-    #[cfg(feature = "path-home")]
-    let res = Ok(home);
-    #[cfg(not(feature = "path-home"))]
-    let res = Ok(());
-    res
+
+    Ok(env)
 }

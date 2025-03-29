@@ -244,7 +244,7 @@ impl<'a> CopyContext<'a> {
 mod tests {
     use std::{collections::HashMap, path::Path, time::Duration};
 
-    use dv_api::{LocalConfig, UserCast};
+    use dv_api::Config;
     use tokio::time::sleep;
 
     use crate::{cache::SqliteCache, dv::tests::TestDv, interactor::TermInteractor};
@@ -257,10 +257,10 @@ mod tests {
         let int = TermInteractor::new().unwrap();
         let cache = SqliteCache::memory();
         let dir = TempDir::new().unwrap();
-        let mut user = LocalConfig::new("local");
-        user.insert("mount", dir.to_string_lossy());
+        let mut cfg = Config::default();
+        cfg.insert("MOUNT", dir.to_string_lossy());
         let mut users = HashMap::new();
-        users.insert("this".to_string(), user.cast().await.unwrap());
+        users.insert("this".to_string(), cfg.connect(None).await.unwrap());
         let src_dir = dir.child("src");
         for (name, content) in src {
             let f = src_dir.child(name);

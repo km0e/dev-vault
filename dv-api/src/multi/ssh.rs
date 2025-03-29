@@ -1,3 +1,5 @@
+use std::{borrow::Cow, collections::HashMap};
+
 use crate::whatever;
 
 use super::dev::{self, *};
@@ -6,7 +8,7 @@ use russh_sftp::{client::SftpSession, protocol::StatusCode};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{debug, info, warn};
 mod config;
-pub use config::SSHConfig;
+pub use config::create;
 mod file;
 
 struct Client {}
@@ -25,22 +27,47 @@ impl client::Handler for Client {
 pub(crate) struct SSHSession {
     session: client::Handle<Client>,
     sftp: SftpSession,
-    #[cfg(feature = "path-home")]
-    home: Option<String>,
+    env: HashMap<String, String>,
     command_util: BoxedCommandUtil<Self>,
 }
 
 impl SSHSession {
-    #[cfg(feature = "path-home")]
-    fn expand_home<'a, 'b: 'a>(&'b self, path: &'a str) -> std::borrow::Cow<'a, str> {
-        if let Some(home) = &self.home {
-            if let Some(path) = path.strip_prefix("~/") {
-                return format!("{}/{}", home, path).into();
-            } else if path == "~" {
-                return home.as_str().into();
+    fn canonicalize<'a, 'b: 'a>(&'b self, path: &'a str) -> Result<std::borrow::Cow<'a, str>> {
+        #[cfg(not(windows))]
+        let home = self.env.get("HOME");
+        #[cfg(windows)]
+        let home = self.env.get("HOMEPATH");
+
+        let path: Cow<str> = if let Some(path) = path.strip_prefix("~") {
+            let Some(home) = home else {
+                whatever!("unknown home")
+            };
+            if path.starts_with("/") {
+                format!("{}{}", home, path).into()
+            } else {
+                home.as_str().into()
             }
+        } else {
+            path.into()
+        };
+
+        let mut new = String::with_capacity(path.len());
+        let mut last_match = 0;
+        for caps in VARIABLE_RE.captures_iter(&path) {
+            let m = caps.get(0).unwrap();
+            let var = caps.get(1).unwrap().as_str();
+            let Some(value) = self.env.get(var) else {
+                whatever!("unknown variable {}", var)
+            };
+            new.push_str(&path[last_match..m.start()]);
+            new.push_str(value);
+            last_match = m.end();
         }
-        path.into()
+        if last_match == 0 {
+            return Ok(path);
+        }
+        new.push_str(&path[last_match..]);
+        Ok(new.into())
     }
     async fn prepare_command(&self, command: Script<'_, '_>) -> Result<String> {
         let cmd = match command {
@@ -96,10 +123,11 @@ impl UserImpl for SSHSession {
         &self,
         path: &Utf8Path,
     ) -> (camino::Utf8PathBuf, Result<FileAttributes>) {
-        #[cfg(feature = "path-home")]
-        let path = self.expand_home(path.as_str());
-        #[cfg(feature = "path-home")]
-        let path = path.as_ref();
+        let path2 = self.canonicalize(path.as_str());
+        if path2.is_err() {
+            return (path.into(), Err(path2.unwrap_err()));
+        }
+        let path = path2.unwrap();
         (
             path.to_string().into(),
             self.sftp.metadata(path).await.map_err(|e| e.into()),
@@ -194,10 +222,8 @@ impl UserImpl for SSHSession {
         Ok(channel.into_pty())
     }
     async fn open(&self, path: &str, opt: OpenFlags) -> crate::Result<BoxedFile> {
-        #[cfg(feature = "path-home")]
-        let path = self.expand_home(path);
-        #[cfg(feature = "path-home")]
-        let path = path.as_ref();
+        let path2 = self.canonicalize(path)?;
+        let path = path2.as_ref();
 
         let open_flags = opt.into();
         let file = loop {

@@ -1,53 +1,38 @@
-use crate::user::Utf8Path;
+use crate::{dev::Dev, user::Utf8Path};
 use resplus::attach;
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
-use async_trait::async_trait;
 use e4pty::prelude::*;
-use tracing::{debug, info};
+use tracing::debug;
 
 use crate::{
-    Package, Pm, Result,
+    Package, Result,
     fs::{BoxedFile, CheckInfo, DirInfo, FileAttributes, Metadata, OpenFlags},
-    params::Params,
     process::DynInteractor,
     user::{BoxedUser, Output},
     whatever,
 };
 
-#[async_trait]
-pub trait UserCast {
-    async fn cast(self) -> Result<User>;
-}
-
 #[derive(Debug)]
 pub struct User {
-    pub params: Params,
     pub variables: HashMap<String, String>,
-    pub hid: String,
     pub is_system: bool,
     inner: BoxedUser,
-    pub pm: Pm,
+    pub dev: Arc<Dev>,
 }
 
 impl User {
     pub async fn new(
-        hid: impl Into<String>,
-        params: Params,
         variables: HashMap<String, String>,
         is_system: bool,
-        dev: impl Into<BoxedUser>,
+        inner: BoxedUser,
+        dev: Arc<Dev>,
     ) -> Result<Self> {
-        info!("new user:{} os:{}", params.user, params.os);
-        let inner = dev.into();
-        let pm = super::util::Pm::new(&inner, &params.os).await?;
         Ok(Self {
-            hid: hid.into(),
-            params,
             variables,
             is_system,
             inner,
-            pm,
+            dev,
         })
     }
     fn normalize<'a>(&self, path: impl Into<&'a camino::Utf8Path>) -> Cow<'a, camino::Utf8Path> {
@@ -55,7 +40,7 @@ impl User {
         let path = if path.has_root() {
             Cow::Borrowed(path)
         } else {
-            let path = match (path.starts_with("~"), self.variables.get("mount")) {
+            let path = match (path.starts_with("~"), self.variables.get("MOUNT")) {
                 (false, Some(mount)) => {
                     camino::Utf8PathBuf::from(format!("{}/{}", mount.as_str(), path.as_str()))
                         .into()
@@ -133,7 +118,7 @@ impl User {
         self.inner.auto(name, action, args).await
     }
     pub async fn app(&self, interactor: &DynInteractor, packages: Package<'_>) -> Result<bool> {
-        packages.install(self, interactor, &self.pm).await
+        packages.install(self, interactor, &self.dev.pm).await
     }
     pub async fn pty(&self, s: Script<'_, '_>, win_size: WindowSize) -> Result<BoxedPty> {
         self.inner.pty(s, win_size).await
