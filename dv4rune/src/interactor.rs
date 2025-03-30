@@ -16,7 +16,7 @@ use tokio::{
         oneshot,
     },
 };
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 pub struct TermInteractor {
     q: mpsc::Sender<Request>,
@@ -70,6 +70,7 @@ impl Interactor for TermInteractor {
             })
             .collect();
         let (tx, rx) = oneshot::channel();
+        trace!("start to send confirm request");
         self.q
             .send(Request::Confirm(Confirm {
                 msg: msg.to_string(),
@@ -81,6 +82,7 @@ impl Interactor for TermInteractor {
         let sel = rx
             .await
             .map_err(|_| dv_api::Error::unknown("confirm receiver dropped"))?;
+        debug!("confirm selection {}", sel);
         Ok(sel)
     }
 }

@@ -18,11 +18,17 @@ use super::Os;
 #[derive(Debug, Clone, Copy, Display, Hash, PartialEq, Eq, EnumIs, EnumString)]
 #[strum(serialize_all = "snake_case")]
 pub enum Pm {
+    #[strum(serialize = "apk")]
     Apk,
+    #[strum(serialize = "apt")]
     Apt,
+    #[strum(serialize = "pacman")]
     Pacman,
+    #[strum(serialize = "yay")]
     Yay,
+    #[strum(serialize = "paru")]
     Paru,
+    #[strum(serialize = "winget")]
     WinGet,
     Unknown,
 }
@@ -63,5 +69,26 @@ impl Pm {
             Os::Windows => platform::windows::detect(u).await,
             _ => Ok(Self::Unknown),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn pm_from_str() {
+        let pm: Pm = "apk".parse().unwrap();
+        assert_eq!(pm, Pm::Apk);
+        let pm: Pm = "apt".parse().unwrap();
+        assert_eq!(pm, Pm::Apt);
+        let pm: Pm = "pacman".parse().unwrap();
+        assert_eq!(pm, Pm::Pacman);
+        let pm: Pm = "yay".parse().unwrap();
+        assert_eq!(pm, Pm::Yay);
+        let pm: Pm = "paru".parse().unwrap();
+        assert_eq!(pm, Pm::Paru);
+        let pm: Pm = "winget".parse().unwrap();
+        assert_eq!(pm, Pm::WinGet);
     }
 }

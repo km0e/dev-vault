@@ -173,6 +173,7 @@ impl UserImpl for This {
                 Ok(file) => break Ok(file),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                     let parent = path2.parent().unwrap();
+                    debug!("try to create dir {}", parent.display());
                     tokio::fs::create_dir_all(parent).await?;
                 }
                 Err(e) => break Err(e),

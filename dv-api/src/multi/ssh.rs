@@ -28,24 +28,20 @@ pub(crate) struct SSHSession {
     session: client::Handle<Client>,
     sftp: SftpSession,
     env: HashMap<String, String>,
+    home: Option<String>,
     command_util: BoxedCommandUtil<Self>,
 }
 
 impl SSHSession {
     fn canonicalize<'a, 'b: 'a>(&'b self, path: &'a str) -> Result<std::borrow::Cow<'a, str>> {
-        #[cfg(not(windows))]
-        let home = self.env.get("HOME");
-        #[cfg(windows)]
-        let home = self.env.get("HOMEPATH");
-
         let path: Cow<str> = if let Some(path) = path.strip_prefix("~") {
-            let Some(home) = home else {
+            let Some(home) = self.home.as_deref() else {
                 whatever!("unknown home")
             };
             if path.starts_with("/") {
                 format!("{}{}", home, path).into()
             } else {
-                home.as_str().into()
+                home.into()
             }
         } else {
             path.into()

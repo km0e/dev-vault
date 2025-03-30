@@ -65,10 +65,10 @@ fn is_user_admin() -> bool {
 
 pub async fn create(mut cfg: Config, dev: Option<Arc<Dev>>) -> Result<User> {
     let is_system = cfg.is_system.unwrap_or_else(is_user_admin);
-    if let Ok(session) = {
+    if let Some(session) = {
         #[cfg(target_os = "linux")]
         {
-            std::env::var("XDG_SESSION_TYPE")
+            std::env::var("XDG_SESSION_TYPE").ok()
         }
         #[cfg(target_os = "macos")]
         {
@@ -81,10 +81,10 @@ pub async fn create(mut cfg: Config, dev: Option<Arc<Dev>>) -> Result<User> {
     } {
         cfg.insert("SESSION", session);
     }
-    if let Ok(user) = {
+    if let Some(user) = {
         #[cfg(target_os = "linux")]
         {
-            std::env::var("USER")
+            std::env::var("USER").ok()
         }
         #[cfg(target_os = "macos")]
         {
@@ -92,7 +92,7 @@ pub async fn create(mut cfg: Config, dev: Option<Arc<Dev>>) -> Result<User> {
         }
         #[cfg(target_os = "windows")]
         {
-            None
+            std::env::var("USERNAME").ok()
         }
     } {
         cfg.insert("USER", user);

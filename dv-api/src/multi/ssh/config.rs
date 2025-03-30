@@ -19,11 +19,16 @@ pub async fn create(host: String, mut cfg: Config, dev: Option<Arc<Dev>>) -> Res
     let channel = flog!(h.channel_open_session()).await?;
     flog!(channel.request_subsystem(true, "sftp")).await?;
     let sftp = russh_sftp::client::SftpSession::new(channel.into_stream()).await?;
-
+    let home = match os {
+        Os::Linux(_) | Os::Mac | Os::Unix => env.get("HOME").cloned(),
+        Os::Windows => env.get("HOMEPATH").cloned(),
+        _ => None,
+    };
     let sys = SSHSession {
         session: h,
         sftp,
         env,
+        home,
         command_util,
     };
     let u: BoxedUser = sys.into();

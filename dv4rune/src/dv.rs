@@ -206,7 +206,7 @@ impl Dv {
 }
 
 impl Dv {
-    #[rune::function(path = Self::app)]
+    #[rune::function(path = Self::pm)]
     async fn pm(this: Ref<Self>, uid: Ref<str>, packages: Package) -> LRes<bool> {
         crate::multi::pm(this.context(), uid.as_ref(), packages).await
     }

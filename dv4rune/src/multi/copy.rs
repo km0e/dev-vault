@@ -58,6 +58,10 @@ impl<'a> CopyContext<'a> {
         src_ts: i64,
         dst_ts: Option<i64>,
     ) -> LRes<bool> {
+        trace!(
+            "check_copy_file {}:{} -> {}:{}",
+            self.src_uid, src_path, self.dst_uid, dst_path
+        );
         let cache = self
             .ctx
             .cache
@@ -166,18 +170,26 @@ impl<'a> CopyContext<'a> {
         meta: Vec<Metadata>,
     ) -> LRes<bool> {
         let mut success = false;
-        let mut src_file = src_path.clone();
-        let mut dst_file = dst_path.clone();
+        let mut src_file = src_path.to_string();
+        let mut dst_file = dst_path.to_string();
+        let src_len = src_file.len();
+        let dst_len = dst_file.len();
         for Metadata { path, ts } in meta {
-            src_file.push(&path);
-            dst_file.push(&path);
-            let dst_ts = self.dst.get_mtime(&dst_file).await?;
-
+            src_file.push('/'); //NOTE: avoid using '\' in path
+            src_file.push_str(path.as_str());
+            dst_file.push('/');
+            dst_file.push_str(path.as_str());
+            let dst_ts = self.dst.get_mtime(dst_file.as_str().into()).await?;
             let res = self
-                .check_copy_file(&src_file, &dst_file, ts, dst_ts)
+                .check_copy_file(
+                    src_file.as_str().into(),
+                    dst_file.as_str().into(),
+                    ts,
+                    dst_ts,
+                )
                 .await?;
-            src_file.clone_from(&src_path);
-            dst_file.clone_from(&dst_path);
+            src_file.truncate(src_len);
+            dst_file.truncate(dst_len);
             success |= res;
         }
         Ok(success)
