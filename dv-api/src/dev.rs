@@ -1,6 +1,6 @@
 use crate::{Os, Pm};
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Dev {
     pub pm: Pm,
     pub os: Os,

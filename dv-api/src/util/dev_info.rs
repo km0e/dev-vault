@@ -5,7 +5,7 @@ pub use linux::Linux as LinuxOs;
 use strum::{AsRefStr, Display, EnumIs};
 
 #[cfg_attr(feature = "rune", derive(rune::Any))]
-#[derive(Debug, Clone, Copy, Default, Display, EnumIs, AsRefStr, PartialEq)]
+#[derive(Debug, Hash, Eq, Clone, Copy, Default, Display, EnumIs, AsRefStr, PartialEq)]
 #[strum(serialize_all = "snake_case")]
 pub enum Os {
     #[default]
@@ -17,12 +17,23 @@ pub enum Os {
     Windows,
     #[strum(serialize = "macos")]
     Mac,
+    #[strum(serialize = "unix")]
+    Unix,
 }
 
-impl rune::alloc::clone::TryClone for Os {
-    #[inline]
-    fn try_clone(&self) -> rune::alloc::Result<Self> {
-        Ok(*self)
+impl Os {
+    pub fn compatible(&self, other: &Os) -> bool {
+        match other {
+            Os::Unknown => true,
+            Os::Linux(LinuxOs::Unknown) => matches!(self, Os::Linux(_)),
+            Os::Linux(linux) => match self {
+                Os::Linux(other_linux) => linux == other_linux,
+                _ => false,
+            },
+            Os::Windows => self == &Os::Windows,
+            Os::Mac => self == &Os::Mac,
+            Os::Unix => matches!(self, Os::Linux(_) | Os::Unix | Os::Mac),
+        }
     }
 }
 
@@ -34,9 +45,16 @@ impl From<&str> for Os {
             match s {
                 "windows" => Os::Windows,
                 "macos" => Os::Mac,
+                "unix" => Os::Unix,
                 _ => Os::Unknown,
             }
         }
+    }
+}
+
+impl From<&String> for Os {
+    fn from(s: &String) -> Self {
+        Os::from(s.as_str())
     }
 }
 

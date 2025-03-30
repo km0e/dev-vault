@@ -46,6 +46,7 @@ impl<'s> Context<'s> {
 }
 
 mod copy;
+mod user;
 pub use copy::CopyContext;
 mod pm;
 pub use pm::{Package, pm};
@@ -53,6 +54,7 @@ mod auto;
 pub use auto::auto;
 mod exec;
 pub use exec::exec;
+mod os;
 mod util;
 
 mod dev {
@@ -64,6 +66,8 @@ mod dev {
 }
 
 pub fn register(m: &mut rune::module::Module) -> Result<(), rune::ContextError> {
+    user::register(m)?;
+    os::register(m)?;
     pm::register(m)?;
     Ok(())
 }

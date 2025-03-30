@@ -40,6 +40,13 @@ impl User {
         let path = if path.has_root() {
             Cow::Borrowed(path)
         } else {
+            if crate::user::VARIABLE_RE
+                .captures(path.as_str())
+                .is_some_and(|c| c.get(0).unwrap().start() == 0)
+            {
+                //TODO: replace variables
+                return Cow::Borrowed(path);
+            }
             let path = match (path.starts_with("~"), self.variables.get("MOUNT")) {
                 (false, Some(mount)) => {
                     camino::Utf8PathBuf::from(format!("{}/{}", mount.as_str(), path.as_str()))

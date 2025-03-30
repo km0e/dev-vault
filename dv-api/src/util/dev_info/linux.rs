@@ -1,7 +1,7 @@
 use strum::{AsRefStr, Display, EnumString};
 
 #[cfg_attr(feature = "rune", derive(rune::Any))]
-#[derive(Default, Debug, Clone, Copy, AsRefStr, Display, EnumString, PartialEq)]
+#[derive(Default, Hash, Eq, Debug, Clone, Copy, AsRefStr, Display, EnumString, PartialEq)]
 #[strum(serialize_all = "snake_case")]
 pub enum Linux {
     #[default]

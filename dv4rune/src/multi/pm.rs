@@ -50,15 +50,14 @@ impl Package {
     }
 }
 
-pub async fn pm(ctx: &Context<'_>, uid: impl AsRef<str>, packages: Package) -> LRes<bool> {
-    let uid = uid.as_ref();
+pub async fn pm(ctx: Context<'_>, uid: &str, packages: Package) -> LRes<bool> {
     let user = ctx.get_user(uid).await?;
     let res = ctx.dry_run
         || user
             .app(ctx.interactor, packages.as_package())
             .log(ctx.interactor)
             .await?;
-    action!(ctx, res, "app {}", packages);
+    action!(ctx, res, "install {}", packages);
     Ok(res)
 }
 

@@ -15,7 +15,7 @@ mod platform;
 mod support;
 use super::Os;
 
-#[derive(Debug, Clone, Copy, Display, Default, Hash, PartialEq, Eq, EnumIs, EnumString)]
+#[derive(Debug, Clone, Copy, Display, Hash, PartialEq, Eq, EnumIs, EnumString)]
 #[strum(serialize_all = "snake_case")]
 pub enum Pm {
     Apk,
@@ -24,7 +24,6 @@ pub enum Pm {
     Yay,
     Paru,
     WinGet,
-    #[default]
     Unknown,
 }
 

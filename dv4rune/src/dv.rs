@@ -1,7 +1,7 @@
 use std::{collections::HashMap, future::IntoFuture, path::Path, sync::Arc};
 
 use dv_api::{
-    Config, User,
+    Config, Os, User,
     dev::Dev,
     fs::{CheckInfo, Metadata, OpenFlags},
     process::Interactor,
@@ -23,7 +23,7 @@ use crate::{
 };
 use support::Result as LRes;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct Device {
     dev: Arc<Dev>,
     system: Option<String>,
@@ -166,29 +166,6 @@ impl Dv {
     }
 }
 
-#[rune::function(free,path = Config::cur)]
-fn current_user_config() -> Config {
-    let mut cfg = Config::default();
-    cfg.insert("HID", "local");
-    cfg.insert("MOUNT", "~/.local/share/dv");
-    cfg.insert("OS", "linux");
-    cfg
-}
-
-#[rune::function(free,path = Config::ssh)]
-fn ssh_user_config(host: &str) -> Config {
-    let mut cfg = Config::default();
-    cfg.insert("HOST", host);
-    cfg.insert("MOUNT", "~/.local/share/dv");
-    cfg.insert("OS", "linux");
-    cfg
-}
-
-#[rune::function(instance, protocol = INDEX_SET)]
-fn config_index_set(this: &mut Config, key: String, value: String) {
-    this.insert(key, value);
-}
-
 impl Dv {
     #[rune::function(path = Self::add_user)]
     async fn add_user(mut this: Mut<Dv>, id: Ref<str>, cfg: Config) -> LRes<()> {
@@ -231,26 +208,32 @@ impl Dv {
 impl Dv {
     #[rune::function(path = Self::app)]
     async fn pm(this: Ref<Self>, uid: Ref<str>, packages: Package) -> LRes<bool> {
-        let ctx = this.context();
-        crate::multi::pm(&ctx, uid, packages).await
+        crate::multi::pm(this.context(), uid.as_ref(), packages).await
     }
 }
+
+impl Dv {
+    #[rune::function(path = Self::os)]
+    async fn os(this: Ref<Self>, uid: Ref<str>) -> LRes<Os> {
+        let uid = uid.as_ref();
+        let user = this.context().get_user(uid).await?;
+        Ok(user.dev.os)
+    }
+}
+
 pub fn module() -> Result<rune::Module, rune::ContextError> {
     let mut m = rune::Module::default();
     m.ty::<Dv>()?;
-    m.ty::<Config>()?;
-    m.function_meta(current_user_config)?;
-    m.function_meta(ssh_user_config)?;
-    m.function_meta(config_index_set)?;
+    crate::multi::register(&mut m)?;
     m.function_meta(Dv::add_user)?;
     m.function_meta(Dv::copy)?;
-    crate::multi::register(&mut m)?;
     m.function_meta(Dv::pm)?;
     m.function_meta(Dv::auto)?;
     m.function_meta(Dv::exec)?;
     m.function_meta(Dv::once)?;
     m.function_meta(Dv::refresh)?;
     m.function_meta(Dv::load_src)?;
+    m.function_meta(Dv::os)?;
     Ok(m)
 }
 
