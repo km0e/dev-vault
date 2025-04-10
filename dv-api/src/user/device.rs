@@ -1,4 +1,4 @@
-use crate::{Os, Pm};
+use crate::util::{Os, Pm};
 
 #[derive(Debug)]
 pub struct Dev {

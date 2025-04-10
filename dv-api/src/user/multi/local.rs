@@ -69,10 +69,7 @@ impl This {
 
 #[async_trait]
 impl UserImpl for This {
-    async fn file_attributes(
-        &self,
-        path: &Utf8Path,
-    ) -> (camino::Utf8PathBuf, Result<FileAttributes>) {
+    async fn file_attributes(&self, path: &XPath) -> (XPathBuf, Result<FileAttributes>) {
         let path2 = self.canonicalize(path.as_str());
         if path2.is_err() {
             return (path.into(), Err(path2.unwrap_err()));
@@ -85,7 +82,7 @@ impl UserImpl for This {
                 .map_err(|e| e.into()),
         )
     }
-    async fn glob_file_meta(&self, path2: &camino::Utf8Path) -> Result<Vec<Metadata>> {
+    async fn glob_file_meta(&self, path2: &XPath) -> Result<Vec<Metadata>> {
         let metadata = path2.metadata()?;
         if metadata.is_dir() {
             let mut result = Vec::new();

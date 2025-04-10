@@ -1,4 +1,4 @@
-use dv_api::Config;
+use dv_api::user::Config;
 
 #[rune::function(free,path = Config::cur)]
 fn current_user_config() -> Config {

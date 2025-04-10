@@ -5,7 +5,7 @@ use russh::client::{self, AuthResult, Handle};
 use tokio::io::AsyncReadExt;
 use tracing::{info, warn};
 
-use crate::{Config, Pm, Result, dev::Dev, util::Os, whatever};
+use crate::whatever;
 
 use super::{Client, SSHSession, dev::*};
 

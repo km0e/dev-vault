@@ -2,8 +2,6 @@ use std::sync::Arc;
 
 use tracing::{info, warn};
 
-use crate::{Config, Os, Pm, dev::Dev};
-
 use super::{This, dev::*};
 
 fn detect() -> Os {

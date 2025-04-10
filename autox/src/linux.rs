@@ -16,11 +16,8 @@ trait Manager {
         runtime: bool,
         force: bool,
     ) -> ZResult<EnableUnitFilesReply>;
-    fn start_unit(&self, name: &str, mode: &str) -> ZResult<OwnedObjectPath>;
+    fn disable_unit_files(&self, files: Vec<&str>, runtime: bool) -> ZResult<EnableUnitFilesReply>;
     fn reload(&self) -> ZResult<()>;
-    fn reload_unit(&self, name: &str, mode: &str) -> ZResult<OwnedObjectPath>;
-    fn reload_or_restart_unit(&self, name: &str, mode: &str) -> ZResult<OwnedObjectPath>;
-    fn get_unit_file_state(&self, name: &str) -> ZResult<String>;
 }
 
 #[proxy(
@@ -64,10 +61,10 @@ impl AutoX {
             manager,
         })
     }
-    pub async fn setup(&self, _name: &str, _args: &str) -> Result<(), Error> {
-        unimplemented!()
+    pub async fn setup(&self, name: &str, _args: &str) -> Result<(), Error> {
+        self.enable(name).await
     }
-    pub async fn enable(&self, name: &str) -> Result<(), Error> {
+    async fn enable(&self, name: &str) -> Result<(), Error> {
         trace!(
             "[{}] setup {}",
             if self.is_system { "system" } else { "user" },
@@ -97,8 +94,23 @@ impl AutoX {
         }
         Ok(())
     }
-    pub async fn destroy(&self, _name: &str) -> Result<(), Error> {
-        unimplemented!()
+    pub async fn destroy(&self, name: &str) -> Result<(), Error> {
+        let unit_path = self.manager.get_unit(name).await?;
+        let unit = UnitProxy::builder(&self.conn)
+            .path(unit_path)?
+            .build()
+            .await?;
+        if unit.unit_file_state().await? != "disabled" {
+            info!(
+                "[{}] {} disabled",
+                if self.is_system { "system" } else { "user" },
+                "test.service",
+            );
+            self.manager
+                .disable_unit_files(vec!["test.service"], false)
+                .await?;
+        }
+        Ok(())
     }
     pub async fn reload(&self, name: &str) -> Result<(), Error> {
         let unit_path = self.manager.get_unit(name).await?;

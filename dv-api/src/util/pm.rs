@@ -6,7 +6,7 @@ mod dev {
     pub use super::super::dev_info::*;
     pub use super::Pm;
     pub use super::support::*;
-    pub use crate::{User, process::DynInteractor, whatever};
+    pub use crate::{process::DynInteractor, user::User, whatever};
     pub use e4pty::prelude::*;
 }
 use dev::*;

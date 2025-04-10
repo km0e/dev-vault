@@ -1,11 +1,10 @@
 use std::{collections::HashMap, future::IntoFuture, path::Path, sync::Arc};
 
 use dv_api::{
-    Config, Os, User,
-    dev::Dev,
     fs::{CheckInfo, Metadata, OpenFlags},
     process::Interactor,
-    user::Utf8Path,
+    user::{Config, Dev, User},
+    util::{Os, XPath},
     whatever,
 };
 use resplus::attach;
@@ -19,7 +18,7 @@ use tracing::info;
 use crate::{
     cache::SqliteCache,
     interactor::TermInteractor,
-    multi::{Context, Package, action},
+    multi::{Context, Packages, action},
 };
 use support::Result as LRes;
 
@@ -71,8 +70,7 @@ impl Dv {
         dst: (Ref<str>, Ref<str>),
         confirm: Option<Ref<str>>,
     ) -> LRes<bool> {
-        crate::multi::CopyContext::new(this.context(), &src.0, &dst.0, confirm.as_deref())
-            .await?
+        crate::multi::CopyContext::new(this.context(), &src.0, &dst.0, confirm.as_deref())?
             .copy(src.1, dst.1)
             .await
     }
@@ -126,10 +124,10 @@ impl Dv {
         Ok(res)
     }
     #[rune::function(path = Self::refresh)]
-    async fn refresh(this: Ref<Self>, id: Ref<str>, key: Ref<str>) -> LRes<bool> {
+    async fn refresh(this: Ref<Self>, id: Ref<str>, key: Ref<str>) -> LRes<()> {
         this.cache.del(&id, &key).await?;
         action!(this, true, "refresh {} {}", id.as_ref(), key.as_ref());
-        Ok(true)
+        Ok(())
     }
     #[rune::function(path = Self::load_src)]
     async fn load_src(this: Ref<Self>, id: Ref<str>, path: Ref<str>) -> LRes<runtime::Vec> {
@@ -138,7 +136,7 @@ impl Dv {
             let path = path.as_ref();
             let res = attach!(user.check_path(path), ..).await?;
             let mut srcs = runtime::Vec::new();
-            let copy = async |src: &Utf8Path| -> LRes<runtime::Value> {
+            let copy = async |src: &XPath| -> LRes<runtime::Value> {
                 let mut src = user.open(src, OpenFlags::READ).await?;
                 let dst = tempfile::NamedTempFile::new()?;
                 let (file, path) = dst.keep()?;
@@ -151,11 +149,11 @@ impl Dv {
                     srcs.push(copy(&f.path).await?)?;
                 }
                 CheckInfo::Dir(di) => {
-                    let mut buf = di.path;
+                    let mut buf = di.path.clone();
                     for Metadata { path, .. } in di.files {
                         buf.push(&path);
                         srcs.push(copy(&buf).await?)?;
-                        buf.pop();
+                        buf.clone_from(&di.path);
                     }
                 }
             }
@@ -207,16 +205,16 @@ impl Dv {
 
 impl Dv {
     #[rune::function(path = Self::pm)]
-    async fn pm(this: Ref<Self>, uid: Ref<str>, packages: Package) -> LRes<bool> {
+    async fn pm(this: Ref<Self>, uid: Ref<str>, packages: Packages) -> LRes<bool> {
         crate::multi::pm(this.context(), uid.as_ref(), packages).await
     }
 }
 
 impl Dv {
     #[rune::function(path = Self::os)]
-    async fn os(this: Ref<Self>, uid: Ref<str>) -> LRes<Os> {
+    fn os(this: Ref<Self>, uid: Ref<str>) -> LRes<Os> {
         let uid = uid.as_ref();
-        let user = this.context().get_user(uid).await?;
+        let user = this.context().get_user(uid)?;
         Ok(user.dev.os)
     }
 }
@@ -226,21 +224,20 @@ pub fn module() -> Result<rune::Module, rune::ContextError> {
     m.ty::<Dv>()?;
     crate::multi::register(&mut m)?;
     m.function_meta(Dv::add_user)?;
-    m.function_meta(Dv::copy)?;
-    m.function_meta(Dv::pm)?;
     m.function_meta(Dv::auto)?;
+    m.function_meta(Dv::copy)?;
     m.function_meta(Dv::exec)?;
-    m.function_meta(Dv::once)?;
-    m.function_meta(Dv::refresh)?;
     m.function_meta(Dv::load_src)?;
+    m.function_meta(Dv::once)?;
     m.function_meta(Dv::os)?;
+    m.function_meta(Dv::pm)?;
+    m.function_meta(Dv::refresh)?;
     Ok(m)
 }
 
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use dv_api::User;
     use std::collections::HashMap;
 
     pub struct TestDv {

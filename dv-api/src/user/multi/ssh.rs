@@ -115,10 +115,7 @@ impl SSHSession {
 
 #[async_trait]
 impl UserImpl for SSHSession {
-    async fn file_attributes(
-        &self,
-        path: &Utf8Path,
-    ) -> (camino::Utf8PathBuf, Result<FileAttributes>) {
+    async fn file_attributes(&self, path: &XPath) -> (XPathBuf, Result<FileAttributes>) {
         let path2 = self.canonicalize(path.as_str());
         if path2.is_err() {
             return (path.into(), Err(path2.unwrap_err()));
@@ -129,7 +126,7 @@ impl UserImpl for SSHSession {
             self.sftp.metadata(path).await.map_err(|e| e.into()),
         )
     }
-    async fn glob_file_meta(&self, path: &camino::Utf8Path) -> crate::Result<Vec<Metadata>> {
+    async fn glob_file_meta(&self, path: &XPath) -> crate::Result<Vec<Metadata>> {
         let metadata = self.sftp.metadata(path.to_string()).await?;
         if metadata.is_dir() {
             let mut stack = vec![path.to_string()];
@@ -172,6 +169,7 @@ impl UserImpl for SSHSession {
         Ok(())
     }
     async fn auto(&self, name: &str, action: &str, _: Option<&str>) -> crate::Result<()> {
+        //TODO:`destroy` action
         let ec = match action {
             "setup" => self.command_util.setup(self, name),
             "reload" => self.command_util.reload(self, name),

@@ -27,5 +27,4 @@ impl From<OpenFlags> for OpenOptions {
     }
 }
 
-#[async_trait::async_trait]
 impl FileImpl for tokio::fs::File {}

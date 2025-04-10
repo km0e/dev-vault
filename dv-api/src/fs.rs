@@ -1,16 +1,16 @@
-use super::util::AsyncStream;
+use crate::util::*;
 
 pub use russh_sftp::protocol::FileAttributes;
 
 #[derive(Debug, Clone)]
 pub struct Metadata {
-    pub path: crate::user::Utf8PathBuf,
+    pub path: XPathBuf,
     pub ts: i64,
 }
 
 #[derive(Debug, Clone)]
 pub struct DirInfo {
-    pub path: camino::Utf8PathBuf,
+    pub path: XPathBuf,
     pub files: Vec<Metadata>,
 }
 
@@ -34,7 +34,6 @@ bitflags::bitflags! {
     }
 }
 
-#[async_trait::async_trait]
 pub trait FileImpl: AsyncStream {}
 
 pub type BoxedFile = Box<dyn FileImpl + Unpin + Send>;

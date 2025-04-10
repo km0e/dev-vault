@@ -2,7 +2,7 @@ use async_trait::async_trait;
 pub use e4pty::prelude::*;
 
 use crate::Result;
-use crate::user::Output;
+use crate::core::Output;
 
 #[async_trait]
 pub trait Interactor {

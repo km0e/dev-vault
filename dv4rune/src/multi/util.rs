@@ -1,14 +1,14 @@
-use dv_api::{User, fs::OpenFlags, user::Utf8Path, whatever};
+use dv_api::{fs::OpenFlags, user::User, util::XPath, whatever};
 use tracing::{info, trace, warn};
 
 use super::dev::LRes;
 pub async fn try_copy(
     src: &User,
     src_uid: &str,
-    src_path: &Utf8Path,
+    src_path: &XPath,
     dst: &User,
     dst_uid: &str,
-    dst_path: &Utf8Path,
+    dst_path: &XPath,
 ) -> LRes<()> {
     trace!("try_copy src:{src_uid} src_path:{src_path} dst:{dst_uid} dst_path:{dst_path}");
     if src_uid == dst_uid {

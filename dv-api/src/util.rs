@@ -7,7 +7,7 @@ mod dev_info;
 pub use dev_info::{LinuxOs, Os};
 mod dev {
     pub use crate::process::PtyProcessConsumer;
-    pub use crate::{Result, user::*};
+    pub use crate::{Result, core::*};
     pub use async_trait::async_trait;
     pub use e4pty::prelude::*;
 }
@@ -17,3 +17,6 @@ pub use command::BoxedCommandUtil;
 pub trait AsyncStream: AsyncRead + AsyncWrite {}
 
 impl<T: AsyncRead + AsyncWrite> AsyncStream for T {}
+
+mod path;
+pub use path::{XPath, XPathBuf};

@@ -12,7 +12,7 @@ pub async fn exec(
     let script = shell
         .map(|_sh| Script::sh(Box::new([commands].into_iter())))
         .unwrap_or_else(|| Script::Whole(commands));
-    let user = ctx.get_user(uid).await?;
+    let user = ctx.get_user(uid)?;
     if !ctx.dry_run {
         let pp = user
             .pty(script, ctx.interactor.window_size().await)

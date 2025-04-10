@@ -12,16 +12,25 @@ fn default_config() -> PathBuf {
 pub struct Cli {
     #[arg(short, long, default_value_os_t = default_config())]
     pub directory: PathBuf,
-    #[arg(short, long)]
+    #[arg(short, long, help = "The config file to use")]
     pub config: Option<PathBuf>,
-    #[arg(short = 'b', long, help = "default is $directory/.cache")]
+    #[arg(short = 'b', long, help = "Default is $directory/.cache")]
     pub dbpath: Option<PathBuf>,
-    #[arg(short = 'n', long, default_value = "false")]
+    #[arg(
+        short = 'n',
+        long,
+        default_value = "false",
+        help = "Do not actually modify anything"
+    )]
     pub dry_run: bool,
-    #[arg(long, default_value = "false")]
+    #[arg(
+        long,
+        default_value = "false",
+        help = "Run the script directly without running the __build.rn script"
+    )]
     pub direct_run: bool,
-    #[arg(default_value = "main")]
+    #[arg(default_value = "main", help = "The entry point of the script")]
     pub entry: String,
-    #[arg(trailing_var_arg = true)]
+    #[arg(trailing_var_arg = true, help = "Arguments to pass to the entry point")]
     pub rargs: Vec<String>,
 }

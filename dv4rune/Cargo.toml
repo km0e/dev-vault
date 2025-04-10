@@ -20,14 +20,14 @@ tokio.workspace = true
 tracing.workspace = true
 async-trait.workspace = true
 
-rustix = { version = "1.0.3", features = ["pty", "fs"] }
+rustix = { version = "1.0.5", features = ["pty", "fs"] }
 
 rune = { version = "0.14.0", git = "https://github.com/rune-rs/rune.git" }
 rune-modules = { version = "0.14.0", git = "https://github.com/rune-rs/rune.git" }
 rusqlite = { version = "0.34.0", features = ["bundled"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-clap = { version = "4.5.32", features = ["derive"] }
-crossterm = { version = "0.28.1", features = ["event-stream"] }
+clap = { version = "4.5.35", features = ["derive"] }
+crossterm = { version = "0.29", features = ["event-stream"] }
 tempfile = "3.19.1"
 
 resplus = { version = "0.1.2", features = ["full"] }

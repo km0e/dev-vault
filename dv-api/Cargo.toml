@@ -18,21 +18,18 @@ tempfile = "3.19.1"
 etc-os-release = "0.1.1"
 fastrand = "2.3.0"
 home = { workspace = true }
-# russh = { version = "0.50.4", features = [
-#     "async-trait",
-# ], git = "https://github.com/km0e/russh.git", branch = "pty" }
 russh = { version = "0.51.1", features = [
     "async-trait",
-], path = "../../russh/russh" }
-russh-config = "0.50.0"
-# russh-sftp = "2.0.8" # FIX:waiting for recent release
-russh-sftp = { git = "https://github.com/km0e/russh-sftp.git" }
-rustix = { version = "1.0.3", features = ["pty"] }
+], git = "https://github.com/km0e/russh.git", branch = "pty" }
+# russh = { version = "0.51.1", features = [
+#     "async-trait",
+# ], path = "../../russh/russh" }
+russh-sftp = "2.1"
+rustix = { version = "1.0.5", features = ["pty"] }
 walkdir = "2.5.0"
 strum = { version = "0.27.1", features = ["derive"] }
 thiserror = "2.0.12"
 resplus = { version = "0.1.2", features = ["full"] }
-camino = "1.1.9"
 regex = "1.11.1"
 
 [target.'cfg(windows)'.dependencies]

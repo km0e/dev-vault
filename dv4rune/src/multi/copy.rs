@@ -1,12 +1,7 @@
 use std::{borrow::Cow, ops::Deref};
 
 use super::dev::*;
-use dv_api::{
-    User,
-    fs::{CheckInfo, DirInfo, FileAttributes, Metadata},
-    user::{Utf8Path, Utf8PathBuf},
-    whatever,
-};
+use dv_api::{fs::*, user::User, util::*, whatever};
 use tracing::{debug, trace};
 
 pub struct CopyContext<'a> {
@@ -25,19 +20,16 @@ impl<'a> Deref for CopyContext<'a> {
     }
 }
 impl<'a> CopyContext<'a> {
-    pub async fn new(
+    pub fn new(
         ctx: Context<'a>,
         src_uid: &'a str,
         dst_uid: &'a str,
         mut opt: Option<&'a str>,
     ) -> LRes<Self> {
-        let src = ctx.get_user(src_uid).await?;
-        let dst = ctx.get_user(dst_uid).await?;
+        let src = ctx.get_user(src_uid)?;
+        let dst = ctx.get_user(dst_uid)?;
         if let Some(_opt) = opt {
             if !matches!(_opt, "o" | "n" | "u") {
-                ctx.interactor
-                    .log(format!("invalid option: {}", _opt))
-                    .await;
                 opt = None;
             }
         }
@@ -53,8 +45,8 @@ impl<'a> CopyContext<'a> {
 
     async fn check_copy_file(
         &self,
-        src_path: &Utf8Path,
-        dst_path: &Utf8Path,
+        src_path: &XPath,
+        dst_path: &XPath,
         src_ts: i64,
         dst_ts: Option<i64>,
     ) -> LRes<bool> {
@@ -165,20 +157,16 @@ impl<'a> CopyContext<'a> {
 
     async fn check_copy_dir(
         &self,
-        src_path: Utf8PathBuf,
-        dst_path: Utf8PathBuf,
+        src_path: XPathBuf,
+        dst_path: XPathBuf,
         meta: Vec<Metadata>,
     ) -> LRes<bool> {
         let mut success = false;
-        let mut src_file = src_path.to_string();
-        let mut dst_file = dst_path.to_string();
-        let src_len = src_file.len();
-        let dst_len = dst_file.len();
+        let mut src_file = src_path.clone();
+        let mut dst_file = dst_path.clone();
         for Metadata { path, ts } in meta {
-            src_file.push('/'); //NOTE: avoid using '\' in path
-            src_file.push_str(path.as_str());
-            dst_file.push('/');
-            dst_file.push_str(path.as_str());
+            src_file.push(&path);
+            dst_file.push(&path);
             let dst_ts = self.dst.get_mtime(dst_file.as_str().into()).await?;
             let res = self
                 .check_copy_file(
@@ -188,8 +176,8 @@ impl<'a> CopyContext<'a> {
                     dst_ts,
                 )
                 .await?;
-            src_file.truncate(src_len);
-            dst_file.truncate(dst_len);
+            src_file.clone_from(&src_path);
+            dst_file.clone_from(&dst_path);
             success |= res;
         }
         Ok(success)
@@ -256,12 +244,10 @@ impl<'a> CopyContext<'a> {
 mod tests {
     use std::{collections::HashMap, path::Path, time::Duration};
 
-    use dv_api::Config;
-    use tokio::time::sleep;
-
     use crate::{cache::SqliteCache, dv::tests::TestDv, interactor::TermInteractor};
 
     use assert_fs::{TempDir, fixture::ChildPath, prelude::*};
+    use dv_api::user::Config;
 
     use super::CopyContext;
 
@@ -334,18 +320,14 @@ mod tests {
     }
     async fn copy_dir_fixture(src: &str, dst: &str) {
         let (dv, dir) = tenv(&[("f0", "f0"), ("f1", "f1")], &[]).await;
-        let ctx = CopyContext::new(dv.context(), "this", "this", Some("o"))
-            .await
-            .unwrap();
+        let ctx = CopyContext::new(dv.context(), "this", "this", Some("o")).unwrap();
         assert!(ctx.copy(src, dst).await.unwrap(), "copy should success");
         content_assert(&dir.child("dst"), &[("f0", "f0"), ("f1", "f1")]);
         cache_assert2(ctx.cache, dir.child("src"), dir.child("dst"), &["f0", "f1"]).await;
     }
     async fn copy_file_fixture(dst: &str, expct: &str) {
         let (dv, dir) = tenv(&[("f0", "f0")], &[]).await;
-        let ctx = CopyContext::new(dv.context(), "this", "this", Some("o"))
-            .await
-            .unwrap();
+        let ctx = CopyContext::new(dv.context(), "this", "this", Some("o")).unwrap();
         assert!(
             ctx.copy("src/f0", dst).await.unwrap(),
             "copy should success"
@@ -373,11 +355,9 @@ mod tests {
     #[tokio::test]
     async fn test_update() {
         let (dv, dir) = tenv(&[("f0", "f00"), ("f1", "f11")], &[]).await;
-        let ctx = CopyContext::new(dv.context(), "this", "this", Some("o"))
-            .await
-            .unwrap();
+        let ctx = CopyContext::new(dv.context(), "this", "this", Some("o")).unwrap();
         assert!(ctx.copy("src", "dst").await.unwrap(), "sync should success");
-        sleep(Duration::from_secs(2)).await;
+        tokio::time::sleep(Duration::from_secs(2)).await;
         let src = dir.child("src");
         src.child("f0").write_str("f0").unwrap();
         src.child("f1").write_str("f1").unwrap();
@@ -394,9 +374,7 @@ mod tests {
     #[tokio::test]
     async fn test_donothing() {
         let (dv, dir) = tenv(&[("f0", "f0"), ("f1", "f1")], &[]).await;
-        let ctx = CopyContext::new(dv.context(), "this", "this", Some("o"))
-            .await
-            .unwrap();
+        let ctx = CopyContext::new(dv.context(), "this", "this", Some("o")).unwrap();
         let src = dir.child("src");
         assert!(
             ctx.copy("src/", "dst").await.unwrap(),

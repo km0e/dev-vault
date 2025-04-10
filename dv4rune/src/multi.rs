@@ -1,5 +1,5 @@
 use crate::{cache::SqliteCache, interactor::TermInteractor};
-use dv_api::{User, process::Interactor};
+use dv_api::user::User;
 use std::collections::HashMap;
 
 #[derive(Clone)]
@@ -32,13 +32,12 @@ impl<'s> Context<'s> {
             users,
         }
     }
-    pub async fn get_user(&self, uid: impl AsRef<str>) -> rune::support::Result<&'s User> {
+    pub fn get_user(&self, uid: impl AsRef<str>) -> rune::support::Result<&'s User> {
         let uid = uid.as_ref();
         match self.users.get(uid) {
             Some(user) => Ok(user),
             None => {
                 let m = format!("user {} not found", uid);
-                self.interactor.log(m.clone()).await;
                 Err(rune::support::Error::msg(m))
             }
         }
@@ -49,7 +48,7 @@ mod copy;
 mod user;
 pub use copy::CopyContext;
 mod pm;
-pub use pm::{Package, pm};
+pub use pm::{Packages, pm};
 mod auto;
 pub use auto::auto;
 mod exec;

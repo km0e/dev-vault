@@ -10,7 +10,7 @@ pub async fn auto(
     let uid = uid.as_ref();
     let service = service.as_ref();
     let action = action.as_ref();
-    let user = ctx.get_user(uid).await?;
+    let user = ctx.get_user(uid)?;
     if !ctx.dry_run {
         user.auto(service, action, args).log(ctx.interactor).await?;
     };

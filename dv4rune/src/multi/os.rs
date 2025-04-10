@@ -1,4 +1,4 @@
-use dv_api::Os;
+use dv_api::util::Os;
 
 #[rune::function(instance)]
 fn compat(this: &Os, os: &str) -> bool {

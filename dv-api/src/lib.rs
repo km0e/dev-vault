@@ -1,14 +1,10 @@
 pub mod error;
-mod multi;
-pub use multi::*;
+pub use error::{Error, Result};
+
 pub mod fs;
 pub mod process;
 
-pub mod dev;
-pub mod user;
-mod util;
-pub use util::*;
+pub mod core;
+pub mod util;
 
-mod wrap;
-pub use error::{Error, Result};
-pub use wrap::User;
+pub mod user;
