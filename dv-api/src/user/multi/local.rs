@@ -156,13 +156,32 @@ impl UserImpl for This {
     }
     async fn open(&self, path: &str, flags: OpenFlags, attr: FileAttributes) -> Result<BoxedFile> {
         let path2 = Path::new(path);
+        let mut open_options = tokio::fs::OpenOptions::from(flags);
+
+        #[cfg(unix)]
+        open_options.mode(attr.permissions.unwrap_or_default());
+        #[cfg(windows)]
+        {
+            const GENERIC_READ: u32 = 0x80000000;
+            const GENERIC_WRITE: u32 = 0x40000000;
+            const GENERIC_EXECUTE: u32 = 0x20000000;
+            // const GENERIC_ALL: u32 = 0x10000000;
+            let mut access = 0;
+            let permissions = attr.permissions();
+            if permissions.owner_read {
+                access |= GENERIC_READ;
+            }
+            if permissions.owner_write {
+                access |= GENERIC_WRITE;
+            }
+            if permissions.owner_exec {
+                access |= GENERIC_EXECUTE;
+            }
+            open_options.access_mode(access);
+        }
 
         let file = loop {
-            match tokio::fs::OpenOptions::from(flags)
-                .mode(attr.permissions.unwrap_or_default())
-                .open(&path2)
-                .await
-            {
+            match open_options.open(&path2).await {
                 Ok(file) => break Ok(file),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                     let parent = path2.parent().unwrap();
