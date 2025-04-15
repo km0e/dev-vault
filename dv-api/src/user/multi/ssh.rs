@@ -3,6 +3,7 @@ use std::{borrow::Cow, collections::HashMap};
 use crate::whatever;
 
 use super::dev::{self, *};
+use resplus::attach;
 use russh::client;
 use russh_sftp::{client::SftpSession, protocol::StatusCode};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -111,6 +112,23 @@ impl SSHSession {
         };
         Ok(cmd)
     }
+    async fn create_parent(&self, path: &str) -> Result<()> {
+        let Some((parent, _)) = path.rsplit_once("/") else {
+            whatever!("invalid path {}", path)
+        };
+        debug!("try create dir {}", parent);
+        match self.sftp.create_dir(parent).await {
+            Ok(_) => Ok(()),
+            Err(russh_sftp::client::error::Error::Status(s))
+                if s.status_code == StatusCode::NoSuchFile
+                    || s.status_code == StatusCode::Failure//NOTE:why failure?
+            =>
+            {
+                Box::pin(self.create_parent(parent)).await
+            }
+            Err(e) => Err(e)?,
+        }
+    }
 }
 
 #[async_trait]
@@ -139,18 +157,14 @@ impl UserImpl for SSHSession {
                         stack.push(sub_path);
                         continue;
                     }
-                    if entry.file_type().is_file() {
-                        if let Some(mtime) = entry.metadata().mtime {
-                            infos.push(Metadata {
-                                path: sub_path.strip_prefix(&prefix).unwrap().to_string().into(),
-                                ts: mtime.into(),
-                            });
-                        } else {
-                            warn!("can't get {sub_path} mtime");
-                        }
+                    if !entry.file_type().is_file() {
+                        warn!("find {:?} type file {sub_path}", entry.file_type());
                         continue;
                     }
-                    warn!("find {:?} type file {sub_path}", entry.file_type());
+                    infos.push(Metadata {
+                        path: sub_path.strip_prefix(&prefix).unwrap().to_string().into(),
+                        attr: entry.metadata(),
+                    });
                 }
             }
             Ok(infos)
@@ -215,19 +229,22 @@ impl UserImpl for SSHSession {
         channel.exec(true, cmd).await?;
         Ok(channel.into_pty())
     }
-    async fn open(&self, path: &str, opt: OpenFlags) -> crate::Result<BoxedFile> {
+    async fn open(&self, path: &str, flags: OpenFlags, attr: FileAttributes) -> Result<BoxedFile> {
         let path2 = self.canonicalize(path)?;
         let path = path2.as_ref();
 
-        let open_flags = opt.into();
+        let open_flags = flags.into();
         let file = loop {
-            match self.sftp.open_with_flags(path, open_flags).await {
+            match self
+                .sftp
+                .open_with_flags_and_attributes(path, open_flags, attr.clone())
+                .await
+            {
                 Ok(file) => break Ok(file),
                 Err(russh_sftp::client::error::Error::Status(s))
                     if s.status_code == StatusCode::NoSuchFile =>
                 {
-                    let parent = path.rsplit_once("/").unwrap().0;
-                    self.sftp.create_dir(parent).await?;
+                    attach!(self.create_parent(path), ..).await?;
                 }
                 Err(e) => break Err(e),
             }

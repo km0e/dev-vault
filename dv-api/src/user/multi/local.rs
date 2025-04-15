@@ -98,20 +98,12 @@ impl UserImpl for This {
                 if metadata.is_dir() {
                     continue;
                 }
-                #[cfg(not(windows))]
-                use std::os::unix::fs::MetadataExt;
-                #[cfg(not(windows))]
-                let modified = metadata.mtime();
-                #[cfg(windows)]
-                use std::os::windows::fs::MetadataExt;
-                #[cfg(windows)]
-                let modified = metadata.last_write_time() as i64;
                 let Ok(rel_path) = file_path.strip_prefix(path2) else {
                     continue;
                 };
                 result.push(Metadata {
                     path: rel_path.to_string_lossy().to_string().into(),
-                    ts: modified,
+                    attr: (&metadata).into(),
                 });
             }
             Ok(result)
@@ -162,11 +154,15 @@ impl UserImpl for This {
         let pty = openpty_local(win_size, command)?;
         Ok(pty)
     }
-    async fn open(&self, path: &str, opt: OpenFlags) -> Result<BoxedFile> {
+    async fn open(&self, path: &str, flags: OpenFlags, attr: FileAttributes) -> Result<BoxedFile> {
         let path2 = Path::new(path);
 
         let file = loop {
-            match tokio::fs::OpenOptions::from(opt).open(&path2).await {
+            match tokio::fs::OpenOptions::from(flags)
+                .mode(attr.permissions.unwrap_or_default())
+                .open(&path2)
+                .await
+            {
                 Ok(file) => break Ok(file),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                     let parent = path2.parent().unwrap();

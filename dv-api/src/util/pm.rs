@@ -10,7 +10,7 @@ mod dev {
     pub use e4pty::prelude::*;
 }
 use dev::*;
-use tracing::info;
+use tracing::{info, warn};
 mod platform;
 mod support;
 use super::Os;
@@ -51,7 +51,8 @@ impl Package<'_> {
                 Pm::Unknown => whatever!("Unknown Pm"),
             }
         } else {
-            whatever!("No package found for {:?}", pm)
+            warn!("No package found for {:?}", pm);
+            Ok(false)
         }
     }
 }
@@ -64,6 +65,7 @@ impl Pm {
                 LinuxOs::Manjaro => platform::manjaro::detect(u).await,
                 LinuxOs::Debian => platform::debian::detect(u).await,
                 LinuxOs::Alpine => platform::alpine::detect(u).await,
+                LinuxOs::Ubuntu => platform::ubuntu::detect(u).await,
                 LinuxOs::Unknown => whatever!("Unknown LinuxOs"),
             },
             Os::Windows => platform::windows::detect(u).await,

@@ -87,16 +87,12 @@ impl User {
         let path = self.normalize(path);
         let (path, fa) = self.inner.file_attributes(&path).await;
         debug!("check_path:{}", path);
-        let fa = fa?;
-        let info = if fa.is_dir() {
+        let attr = fa?;
+        let info = if attr.is_dir() {
             let files = self.inner.glob_file_meta(&path).await?;
             CheckInfo::Dir(DirInfo { path, files })
         } else {
-            let ts = match fa.mtime {
-                Some(time) => time as i64,
-                None => whatever!("{path} mtime"),
-            };
-            CheckInfo::File(Metadata { path, ts })
+            CheckInfo::File(Metadata { path, attr })
         };
         Ok(info)
     }
@@ -137,7 +133,16 @@ impl User {
         self.inner.exec(s).await
     }
     pub async fn open(&self, path: &XPath, opt: OpenFlags) -> Result<BoxedFile> {
+        self.open_with_attr(path, opt, FileAttributes::default())
+            .await
+    }
+    pub async fn open_with_attr(
+        &self,
+        path: &XPath,
+        flags: OpenFlags,
+        attr: FileAttributes,
+    ) -> Result<BoxedFile> {
         let path = self.normalize(path);
-        attach!(self.inner.open(path.as_str(), opt), 0).await
+        attach!(self.inner.open(path.as_str(), flags, attr), 0).await
     }
 }

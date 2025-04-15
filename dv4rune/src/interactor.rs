@@ -11,12 +11,11 @@ use dv_api::{
 
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    sync::{
-        mpsc::{self, Receiver},
-        oneshot,
-    },
+    sync::mpsc,
 };
 use tracing::{debug, trace, warn};
+
+use crate::utils::Oneshot;
 
 pub struct TermInteractor {
     q: mpsc::Sender<Request>,
@@ -44,17 +43,17 @@ impl Interactor for TermInteractor {
     }
     async fn ask(&self, pty: BoxedPty) -> dv_api::Result<i32> {
         let (mut ctl, writer, reader) = pty.destruct();
-        let (tx, rx) = oneshot::channel();
+        let oneshot = Oneshot::new();
         self.q
             .send(Request::Ask(Ask {
                 writer,
                 reader,
-                exit: rx,
+                exit: oneshot.clone(),
             }))
             .await
             .expect("send ask request");
         let ec = ctl.wait().await?;
-        tx.send(()).expect("send exit signal");
+        oneshot.send(());
         Ok(ec)
     }
     async fn confirm(&self, msg: String, opts: &[&str]) -> Result<usize> {
@@ -69,19 +68,19 @@ impl Interactor for TermInteractor {
                 (c, s.to_string())
             })
             .collect();
-        let (tx, rx) = oneshot::channel();
+
+        let oneshot = Oneshot::new();
         trace!("start to send confirm request");
         self.q
             .send(Request::Confirm(Confirm {
                 msg: msg.to_string(),
                 opts,
-                sel: tx,
+                sel: oneshot.clone(),
             }))
             .await
             .expect("send confirm request");
-        let sel = rx
-            .await
-            .map_err(|_| dv_api::Error::unknown("confirm receiver dropped"))?;
+        debug!("wait for confirm selection");
+        let sel = oneshot.wait();
         debug!("confirm selection {}", sel);
         Ok(sel)
     }
@@ -94,7 +93,7 @@ enum Request {
 }
 
 struct Ui {
-    channel: Receiver<Request>,
+    channel: mpsc::Receiver<Request>,
 }
 
 impl Ui {
@@ -125,7 +124,7 @@ impl Ui {
 struct Ask {
     writer: BoxedPtyWriter,
     reader: BoxedPtyReader,
-    exit: oneshot::Receiver<()>,
+    exit: Oneshot<()>,
 }
 
 impl Ask {
@@ -133,7 +132,7 @@ impl Ask {
         let Ask {
             mut writer,
             mut reader,
-            mut exit,
+            exit,
         } = self;
         let _guard = RawModeGuard::new()?;
         debug!("start to sync stdin to pty");
@@ -154,7 +153,7 @@ impl Ask {
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         let mut key_buf = [0u8; 4];
-        while let Err(oneshot::error::TryRecvError::Empty) = exit.try_recv() {
+        while exit.try_wait().is_none() {
             if !event::poll(Duration::from_millis(100))? {
                 continue;
             }
@@ -196,7 +195,7 @@ impl Ask {
 struct Confirm {
     msg: String,
     opts: Vec<(char, String)>,
-    sel: oneshot::Sender<usize>,
+    sel: Oneshot<usize>,
 }
 
 impl Confirm {
@@ -232,10 +231,11 @@ impl Confirm {
                 let KeyCode::Char(c) = code else {
                     continue;
                 };
+                debug!("read key {}", c);
                 if let Some((i, hint)) = hash.remove(&c) {
                     drop(_guard); //NOTE:MoveToNextLine is not working in raw mode?
                     println!("{hint}");
-                    self.sel.send(i).expect("send confirm selection");
+                    self.sel.send(i);
                     return Ok(());
                 }
             }

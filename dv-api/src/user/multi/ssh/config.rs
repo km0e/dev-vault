@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use resplus::flog;
+use resplus::{attach, flog};
 use russh::client::{self, AuthResult, Handle};
 use tokio::io::AsyncReadExt;
 use tracing::{info, warn};
@@ -10,7 +10,7 @@ use crate::whatever;
 use super::{Client, SSHSession, dev::*};
 
 pub async fn create(host: String, mut cfg: Config, dev: Option<Arc<Dev>>) -> Result<User> {
-    let (h, user) = connect(host, cfg.get("passwd").cloned()).await?;
+    let (h, user) = attach!(connect(&host, cfg.get("passwd").cloned()), 0).await?;
     cfg.entry("USER".into()).or_insert(user.clone());
     let os = cfg.get("OS").map(|s| s.as_str()).unwrap_or("");
     let mut os = os.into();
@@ -43,7 +43,7 @@ pub async fn create(host: String, mut cfg: Config, dev: Option<Arc<Dev>>) -> Res
     User::new(cfg.vars, cfg.is_system.unwrap_or(false), u, dev).await
 }
 
-async fn connect(host: String, passwd: Option<String>) -> Result<(Handle<Client>, String)> {
+async fn connect(host: &str, passwd: Option<String>) -> Result<(Handle<Client>, String)> {
     let host_cfg = flog!(russh_config::parse_home(&host), ..)?; //with host
     let config = client::Config::default();
     let config = Arc::new(config);

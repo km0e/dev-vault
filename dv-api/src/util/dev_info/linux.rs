@@ -13,4 +13,6 @@ pub enum Linux {
     Alpine,
     #[strum(serialize = "debian")]
     Debian,
+    #[strum(serialize = "ubuntu")]
+    Ubuntu,
 }

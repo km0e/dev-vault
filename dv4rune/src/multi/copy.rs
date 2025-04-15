@@ -29,7 +29,7 @@ impl<'a> CopyContext<'a> {
         let src = ctx.get_user(src_uid)?;
         let dst = ctx.get_user(dst_uid)?;
         if let Some(_opt) = opt {
-            if !matches!(_opt, "o" | "n" | "u") {
+            if !matches!(_opt, "y" | "n" | "u") {
                 opt = None;
             }
         }
@@ -47,8 +47,8 @@ impl<'a> CopyContext<'a> {
         &self,
         src_path: &XPath,
         dst_path: &XPath,
-        src_ts: i64,
-        dst_ts: Option<i64>,
+        src_attr: FileAttributes,
+        dst_attr: FileAttributes,
     ) -> LRes<bool> {
         trace!(
             "check_copy_file {}:{} -> {}:{}",
@@ -60,54 +60,55 @@ impl<'a> CopyContext<'a> {
             .get(self.dst_uid, dst_path.as_str())
             .log(self.interactor)
             .await?;
-        let (do_, rev) = match (cache, dst_ts) {
-            (Some((dst_ver, old_dst_ts)), Some(dst_ts))
-                if dst_ver == src_ts || old_dst_ts == dst_ts =>
-            {
-                debug!(
-                    "src {{path:{} old_ts:{} ts:{}}} dst {{path:{} old_ts:{} ts:{}}}",
-                    src_path, dst_ver, src_ts, dst_path, old_dst_ts, dst_ts
-                );
-                if old_dst_ts != dst_ts {
-                    match self.opt {
-                        Some("n") => (false, false),
-                        Some("u") => (true, true),
-                        _ => {
-                            let sel = self
-                                .interactor
-                                .confirm(
-                                    format!("{} is newer, do what?", dst_path),
-                                    &["n/skip", "u/update"],
-                                )
-                                .log(self.interactor)
-                                .await?;
-                            (sel == 1, true)
-                        }
-                    }
-                } else {
-                    (dst_ver != src_ts, false)
+        let overwrite = src_attr.mtime.is_some_and(|mt| {
+            cache.is_none_or(|(ver, _)| ver != mt as i64) || dst_attr.mtime.is_none()
+        });
+        let update = dst_attr.mtime.is_some_and(|mt| {
+            cache.is_none_or(|(_, old)| old != mt as i64) || src_attr.mtime.is_none()
+        });
+        debug!(
+            "{}:{}({:?}) - {}:{}({:?}) - {:?}",
+            self.src_uid, src_path, src_attr.mtime, self.dst_uid, dst_path, dst_attr.mtime, cache
+        );
+        let res = match (self.opt, overwrite, update) {
+            (Some("y"), true, _) => Some(true),
+            (Some("u"), _, true) => Some(false),
+            (Some("n"), _, _) => None,
+            (_, false, false) => None,
+            _ => {
+                let mut hint = String::new();
+                let mut opts = Vec::new();
+                if overwrite {
+                    hint.push_str(self.src_uid);
+                    hint.push(':');
+                    hint.push_str(src_path.as_str());
+                    hint.push_str(" is newer, ");
+                    opts.push("y/overwrite");
+                }
+                if update {
+                    hint.push_str(self.dst_uid);
+                    hint.push(':');
+                    hint.push_str(dst_path.as_str());
+                    hint.push_str(" is newer, ");
+                    opts.push("u/update");
+                }
+                hint.push_str("do what?");
+                opts.push("n/skip");
+                let sel = self
+                    .interactor
+                    .confirm(hint, &opts)
+                    .log(self.interactor)
+                    .await?;
+                match opts[sel].chars().nth(0) {
+                    Some('y') => Some(true),
+                    Some('u') => Some(false),
+                    Some('n') => None,
+                    _ => unreachable!(),
                 }
             }
-            (_, None) => (true, false),
-            _ => match self.opt {
-                Some("o") => (true, false),
-                Some("n") => (false, false),
-                Some("u") => (true, true),
-                _ => {
-                    let sel = self
-                        .interactor
-                        .confirm(
-                            format!("{} is newer, do what?", dst_path),
-                            &["y/overwrite", "n/skip", "u/update"],
-                        )
-                        .log(self.interactor)
-                        .await?;
-                    (sel != 1, sel == 2)
-                }
-            },
         };
-        if do_ && !self.dry_run {
-            let (src_ts, dst_ts) = if !rev {
+        if let Some(do_) = if !self.dry_run { res } else { None } {
+            let (src_ts, dst_ts) = if do_ {
                 try_copy(
                     self.src,
                     self.src_uid,
@@ -117,7 +118,11 @@ impl<'a> CopyContext<'a> {
                     dst_path,
                 )
                 .await?;
-                (Some(src_ts), self.dst.get_mtime(dst_path).await?)
+                let src_ts = match src_attr.mtime {
+                    Some(ts) => Some(ts as i64),
+                    None => self.src.get_mtime(src_path).await?,
+                };
+                (src_ts, self.dst.get_mtime(dst_path).await?)
             } else {
                 try_copy(
                     self.dst,
@@ -128,6 +133,10 @@ impl<'a> CopyContext<'a> {
                     src_path,
                 )
                 .await?;
+                let dst_ts = match src_attr.mtime {
+                    Some(ts) => Some(ts as i64),
+                    None => self.src.get_mtime(src_path).await?,
+                };
                 (self.src.get_mtime(src_path).await?, dst_ts)
             };
             let Some(src_ts) = src_ts else {
@@ -141,18 +150,19 @@ impl<'a> CopyContext<'a> {
                 .log(self.interactor)
                 .await?;
         }
+        let update = res.is_some_and(|do_| !do_);
         action!(
             self,
-            do_,
+            res.is_some(),
             "{} {}:{} {} {}:{}",
-            if do_ && rev { "update" } else { "copy" },
+            if update { "update" } else { "copy" },
             self.src_uid,
             src_path,
-            if do_ && rev { "<-" } else { "->" },
+            if update { "<-" } else { "->" },
             self.dst_uid,
             dst_path
         );
-        Ok(do_)
+        Ok(res.is_some())
     }
 
     async fn check_copy_dir(
@@ -164,16 +174,16 @@ impl<'a> CopyContext<'a> {
         let mut success = false;
         let mut src_file = src_path.clone();
         let mut dst_file = dst_path.clone();
-        for Metadata { path, ts } in meta {
+        for Metadata { path, attr } in meta {
             src_file.push(&path);
             dst_file.push(&path);
-            let dst_ts = self.dst.get_mtime(dst_file.as_str().into()).await?;
+            let (full_dst_file, dst_attr) = self.dst.check_file(&dst_file).await;
             let res = self
                 .check_copy_file(
                     src_file.as_str().into(),
-                    dst_file.as_str().into(),
-                    ts,
-                    dst_ts,
+                    full_dst_file.as_str().into(),
+                    attr,
+                    dst_attr.unwrap_or_default(),
                 )
                 .await?;
             src_file.clone_from(&src_path);
@@ -190,7 +200,7 @@ impl<'a> CopyContext<'a> {
             "copy {}:{} -> {}:{}",
             self.src_uid, src_path, self.dst_uid, dst_path
         );
-        let confirm = |fa: dv_api::Result<FileAttributes>, is_dir: bool| -> LRes<Option<i64>> {
+        let confirm = |fa: dv_api::Result<FileAttributes>, is_dir: bool| -> LRes<FileAttributes> {
             match fa {
                 Ok(fa) if fa.is_dir() != is_dir => {
                     whatever!(
@@ -200,8 +210,8 @@ impl<'a> CopyContext<'a> {
                     )
                 }
                 Err(e) if !e.is_not_found() => Err(e)?,
-                Ok(fa) => Ok(Some(fa.mtime.unwrap_or_default().into())),
-                _ => Ok(None),
+                Ok(fa) => Ok(fa),
+                _ => Ok(FileAttributes::default()),
             }
         };
         if src_path.ends_with('/') {
@@ -232,7 +242,7 @@ impl<'a> CopyContext<'a> {
                 }
                 CheckInfo::File(file) => {
                     let dst_ts = confirm(fa, false)?;
-                    self.check_copy_file(&file.path, &dst_path2, file.ts, dst_ts)
+                    self.check_copy_file(&file.path, &dst_path2, file.attr, dst_ts)
                         .await
                 }
             }
@@ -251,6 +261,11 @@ mod tests {
 
     use super::CopyContext;
 
+    ///Prepare a test environment with a source and destination directory.
+    /// # Parameters
+    ///
+    /// - `src`: list of (name, content) pairs to create in the source directory
+    /// - `dst`: list of (name, content) pairs to create in the destination directory
     async fn tenv(src: &[(&str, &str)], dst: &[(&str, &str)]) -> (TestDv, TempDir) {
         let int = TermInteractor::new().unwrap();
         let cache = SqliteCache::memory();
@@ -320,23 +335,25 @@ mod tests {
     }
     async fn copy_dir_fixture(src: &str, dst: &str) {
         let (dv, dir) = tenv(&[("f0", "f0"), ("f1", "f1")], &[]).await;
-        let ctx = CopyContext::new(dv.context(), "this", "this", Some("o")).unwrap();
+        let ctx = CopyContext::new(dv.context(), "this", "this", Some("y")).unwrap();
         assert!(ctx.copy(src, dst).await.unwrap(), "copy should success");
         content_assert(&dir.child("dst"), &[("f0", "f0"), ("f1", "f1")]);
         cache_assert2(ctx.cache, dir.child("src"), dir.child("dst"), &["f0", "f1"]).await;
     }
-    async fn copy_file_fixture(dst: &str, expct: &str) {
+
+    /// Test operation of copy("src/f0", `dst`) will generate `expect`
+    async fn copy_file_fixture(dst: &str, expect: &str, default: &str) {
         let (dv, dir) = tenv(&[("f0", "f0")], &[]).await;
-        let ctx = CopyContext::new(dv.context(), "this", "this", Some("o")).unwrap();
+        let ctx = CopyContext::new(dv.context(), "this", "this", Some(default)).unwrap();
         assert!(
             ctx.copy("src/f0", dst).await.unwrap(),
             "copy should success"
         );
-        dir.child(expct).assert("f0");
+        dir.child(expect).assert("f0");
         cache_assert(
             ctx.cache,
             dir.child("src/f0").path(),
-            dir.child(expct).path(),
+            dir.child(expect).path(),
         )
         .await;
     }
@@ -349,13 +366,13 @@ mod tests {
     }
     #[tokio::test]
     async fn copy_file() {
-        copy_file_fixture("dst", "dst").await;
-        copy_file_fixture("dst/", "dst/f0").await;
+        copy_file_fixture("dst", "dst", "y").await;
+        copy_file_fixture("dst/", "dst/f0", "y").await;
     }
     #[tokio::test]
     async fn test_update() {
         let (dv, dir) = tenv(&[("f0", "f00"), ("f1", "f11")], &[]).await;
-        let ctx = CopyContext::new(dv.context(), "this", "this", Some("o")).unwrap();
+        let ctx = CopyContext::new(dv.context(), "this", "this", Some("y")).unwrap();
         assert!(ctx.copy("src", "dst").await.unwrap(), "sync should success");
         tokio::time::sleep(Duration::from_secs(2)).await;
         let src = dir.child("src");
@@ -374,12 +391,13 @@ mod tests {
     #[tokio::test]
     async fn test_donothing() {
         let (dv, dir) = tenv(&[("f0", "f0"), ("f1", "f1")], &[]).await;
-        let ctx = CopyContext::new(dv.context(), "this", "this", Some("o")).unwrap();
+        let mut ctx = CopyContext::new(dv.context(), "this", "this", Some("y")).unwrap();
         let src = dir.child("src");
         assert!(
             ctx.copy("src/", "dst").await.unwrap(),
             "sync should success"
         );
+        ctx.opt = Some("n");
         assert!(
             !ctx.copy("src/", "dst").await.unwrap(),
             "sync should do nothing"

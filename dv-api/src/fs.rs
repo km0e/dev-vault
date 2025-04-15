@@ -5,7 +5,7 @@ pub use russh_sftp::protocol::FileAttributes;
 #[derive(Debug, Clone)]
 pub struct Metadata {
     pub path: XPathBuf,
-    pub ts: i64,
+    pub attr: FileAttributes,
 }
 
 #[derive(Debug, Clone)]

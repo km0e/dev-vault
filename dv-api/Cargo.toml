@@ -11,7 +11,7 @@ tracing.workspace = true
 async-trait.workspace = true
 
 rune = { version = "0.14.0", git = "https://github.com/rune-rs/rune.git", optional = true }
-e4pty = { version = "0.1.2", path = "../e4pty" }
+e4pty = { version = "0.1.3" }
 autox = { path = "../autox" }
 bitflags = "2.9.0"
 tempfile = "3.19.1"
@@ -24,6 +24,7 @@ russh = { version = "0.51.1", features = [
 # russh = { version = "0.51.1", features = [
 #     "async-trait",
 # ], path = "../../russh/russh" }
+russh-config = "0.50.0"
 russh-sftp = "2.1"
 rustix = { version = "1.0.5", features = ["pty"] }
 walkdir = "2.5.0"

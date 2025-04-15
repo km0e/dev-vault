@@ -19,7 +19,7 @@ pub trait UserImpl {
     async fn file_attributes(&self, path: &XPath) -> (XPathBuf, Result<FileAttributes>);
     async fn glob_file_meta(&self, path: &XPath) -> Result<Vec<Metadata>>;
     async fn copy(&self, src_path: &str, dst: &str, dst_path: &str) -> Result<()>;
-    async fn open(&self, path: &str, opt: OpenFlags) -> Result<BoxedFile>;
+    async fn open(&self, path: &str, flags: OpenFlags, attr: FileAttributes) -> Result<BoxedFile>;
     async fn auto(&self, name: &str, action: &str, args: Option<&str>) -> Result<()>;
     async fn exec(&self, command: Script<'_, '_>) -> Result<Output>;
     async fn pty(&self, command: Script<'_, '_>, win_size: WindowSize) -> Result<BoxedPty>;
