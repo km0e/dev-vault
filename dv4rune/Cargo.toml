@@ -1,6 +1,6 @@
 [package]
 name = "dv4rune"
-version = "0.1.0"
+version = "0.1.0-alpha.0"
 description = "a rune-based command line tool that provides abstract user (device) interoperability"
 homepage = "https://blog.101248.xyz/zh/dv4rune"
 edition.workspace = true
