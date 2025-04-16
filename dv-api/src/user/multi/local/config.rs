@@ -70,7 +70,7 @@ pub async fn create(mut cfg: Config, dev: Option<Arc<Dev>>) -> Result<User> {
         }
         #[cfg(target_os = "macos")]
         {
-            None
+            None::<String>
         }
         #[cfg(target_os = "windows")]
         {

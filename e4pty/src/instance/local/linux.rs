@@ -66,6 +66,9 @@ pub fn openpty(window_size: WindowSize, script: Script<'_, '_>) -> std::io::Resu
         use std::os::unix::process::CommandExt;
         builder.pre_exec(move || {
             // Create a new process group.
+            #[cfg(target_os = "macos")]
+            use rustix::{io, process};
+            #[cfg(not(target_os = "macos"))]
             use rustix_openpty::rustix::{io, process};
             process::setsid()?;
             process::ioctl_tiocsctty(&pair.user)?;
